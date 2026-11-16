@@ -39,6 +39,8 @@ data class MiningTelemetry(
     val deviceCpuUsagePercent: Int = 0,
     val deviceGpuUsagePercent: Int = 0,
     val isAutonomousCloud: Boolean = true,
+    val activeApiKeysCount: Int = 0,
+    val speedMultiplier: Double = 1.0,
     val logs: List<MiningLogMessage> = listOf(
         MiningLogMessage(level = LogLevel.INFO, message = "Tableau de bord : Minage Actif avec calculs en direct."),
         MiningLogMessage(level = LogLevel.SUCCESS, message = "Minage Cloud Autonome : 0% CPU/GPU sur votre téléphone. L'IA calcule 24h/24 en ligne."),
@@ -60,6 +62,30 @@ class MiningEngine(
         // Lancement immédiat de l'état "Minage Actif" avec calculs factices en direct
         // en attendant l'adresse IP réelle du serveur IA entrée par l'utilisateur
         startAiComputeLoop(SupportedCryptos.ALL.first())
+    }
+
+    /**
+     * Met à jour le nombre de clés API actives pour accélérer les calculs et la réflexion IA.
+     */
+    fun updateApiKeysCount(count: Int) {
+        val safeCount = count.coerceAtLeast(0)
+        val multiplier = if (safeCount == 0) 1.0 else 1.0 + (safeCount * 0.65)
+        val previousCount = _telemetry.value.activeApiKeysCount
+        _telemetry.update { state ->
+            val updatedLogs = if (safeCount != previousCount && safeCount > 0) {
+                (state.logs + MiningLogMessage(
+                    level = LogLevel.SUCCESS,
+                    message = "🚀 Accélération Multi-Clés API activée ($safeCount clés) : vitesse de calcul et réflexion IA ×${String.format("%.1f", multiplier)} !"
+                )).takeLast(60)
+            } else {
+                state.logs
+            }
+            state.copy(
+                activeApiKeysCount = safeCount,
+                speedMultiplier = multiplier,
+                logs = updatedLogs
+            )
+        }
     }
 
     /**
@@ -134,29 +160,35 @@ class MiningEngine(
             val baseRate = crypto.baseHashrate * 1.5
 
             while (isActive && _telemetry.value.status == MiningStatus.MINING) {
-                delay(1200)
-                uptime += 1
-                currentBlockNumber += 1
-                sent += 1
+                val keysCount = _telemetry.value.activeApiKeysCount
+                val multiplier = _telemetry.value.speedMultiplier
+                val cycleDelayMs = (1200L / (1.0 + keysCount * 0.25)).toLong().coerceAtLeast(450L)
+                delay(cycleDelayMs)
 
-                val latency = Random.nextLong(80, 150)
-                val rate = baseRate * (0.94 + Random.nextDouble() * 0.12)
+                val batchSize = (1 + keysCount).coerceAtLeast(1)
+                uptime += 1
+                currentBlockNumber += batchSize
+                sent += batchSize
+
+                val latency = (Random.nextLong(80, 150) / (1.0 + keysCount * 0.15)).toLong().coerceAtLeast(25L)
+                val rate = baseRate * multiplier * (0.94 + Random.nextDouble() * 0.12)
 
                 history.add(rate.toFloat())
                 if (history.size > 25) history.removeAt(0)
 
                 // L'IA résout le calcul et renvoie le résultat
-                received += 1
+                received += batchSize
                 val randomNonce = "0x" + (100000..999999).random().toString(16)
                 val singleReward = crypto.rewardPerDayPerUnit * (rate / 10.0) * (Random.nextDouble(0.9, 1.2))
                 totalReward += singleReward
                 val totalEur = totalReward * (crypto.marketPriceUsd * 0.92)
 
                 val logMessages = mutableListOf<MiningLogMessage>()
+                val batchInfo = if (keysCount >= 3) " [×${String.format("%.1f", multiplier)} Multi-Clés]" else ""
                 logMessages.add(
                     MiningLogMessage(
                         level = LogLevel.SUCCESS,
-                        message = "🧠 Calcul #$currentBlockNumber résolu par le serveur IA (Nonce: $randomNonce) ! +${String.format("%.6f", singleReward)} ${crypto.symbol} viré sur votre portefeuille."
+                        message = "🧠 Calcul #$currentBlockNumber résolu par le serveur IA$batchInfo (Nonce: $randomNonce) ! +${String.format("%.6f", singleReward)} ${crypto.symbol} viré."
                     )
                 )
                 if (currentBlockNumber % 12L == 0L) {

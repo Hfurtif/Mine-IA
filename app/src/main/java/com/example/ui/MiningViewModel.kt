@@ -61,6 +61,9 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     )
     val aiMessages: StateFlow<List<AiMessage>> = _aiMessages.asStateFlow()
 
+    private val _apiKeySlots = MutableStateFlow(listOf("", "", ""))
+    val apiKeySlots: StateFlow<List<String>> = _apiKeySlots.asStateFlow()
+
     private val _isAiLoading = MutableStateFlow(false)
     val isAiLoading: StateFlow<Boolean> = _isAiLoading.asStateFlow()
 
@@ -72,6 +75,10 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         // L'adresse wallet commence strictement vide : c'est à l'utilisateur de l'ajouter
         walletAddressInput.value = ""
         aiServerIpInput.value = ""
+
+        val savedKeys = preferences.getAiApiKeySlots(minSlots = 3)
+        _apiKeySlots.value = savedKeys
+        engine.updateApiKeysCount(preferences.getActiveAiApiKeys().size)
     }
 
     fun selectCrypto(crypto: CryptoCurrency) {
@@ -145,6 +152,27 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         aiServerIpInput.value = ip.trim()
     }
 
+    fun saveApiKeys(keys: List<String>) {
+        preferences.saveAiApiKeys(keys)
+        val updatedSlots = preferences.getAiApiKeySlots(minSlots = 3)
+        _apiKeySlots.value = updatedSlots
+        val activeCount = preferences.getActiveAiApiKeys().size
+        engine.updateApiKeysCount(activeCount)
+
+        if (activeCount >= 3) {
+            val multiplier = 1.0 + (activeCount * 0.65)
+            showNotification(
+                "$activeCount clés API enregistrées ! Vitesse de calcul et réflexion boostées (×${String.format("%.1f", multiplier)})."
+            )
+        } else if (activeCount > 0) {
+            showNotification(
+                "$activeCount clé(s) enregistrée(s). Ajoutez au moins 3 clés API pour débloquer la vitesse maximale !"
+            )
+        } else {
+            showNotification("Clés API effacées.")
+        }
+    }
+
     fun addWallet(name: String, cryptoSymbol: String, publicAddress: String, isDefault: Boolean): AddressValidationResult {
         val validation = SecurityValidator.validatePublicAddress(cryptoSymbol, publicAddress)
         if (validation !is AddressValidationResult.Valid) {
@@ -179,9 +207,10 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         _isAiLoading.value = true
 
         viewModelScope.launch {
+            val activeKeys = preferences.getActiveAiApiKeys()
             val answer = aiAdvisor.askAdvisor(
                 prompt = userPrompt,
-                customApiKey = aiServerIpInput.value,
+                customApiKeys = activeKeys,
                 currentCrypto = _selectedCrypto.value.name,
                 currentHashrate = "${String.format("%.1f", telemetry.value.hashrate)} ${telemetry.value.hashrateUnit}"
             )

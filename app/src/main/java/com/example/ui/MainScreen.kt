@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Warning
@@ -69,6 +70,7 @@ import com.example.ui.components.BeginnerGuideDialog
 import com.example.ui.screens.AiAssistantScreen
 import com.example.ui.screens.CryptosScreen
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.WalletsScreen
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.DangerRed
@@ -84,10 +86,11 @@ import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.WarningAmber
 
 enum class NavTab(val title: String, val icon: ImageVector, val tag: String) {
-    DASHBOARD("Minage IA", Icons.Default.Speed, "tab_dashboard"),
-    WALLETS("Portefeuilles", Icons.Default.AccountBalanceWallet, "tab_wallets"),
+    DASHBOARD("Minage", Icons.Default.Speed, "tab_dashboard"),
+    WALLETS("Wallets", Icons.Default.AccountBalanceWallet, "tab_wallets"),
     CRYPTOS("Cryptos", Icons.Default.MonetizationOn, "tab_cryptos"),
-    AI_ASSISTANT("Assistant IA", Icons.Default.AutoAwesome, "tab_ai")
+    AI_ASSISTANT("Assistant", Icons.Default.AutoAwesome, "tab_ai"),
+    SETTINGS("Paramètres", Icons.Default.Settings, "tab_settings")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +107,7 @@ fun MainScreen(
     val selectedCrypto by viewModel.selectedCrypto.collectAsStateWithLifecycle()
     val notification by viewModel.notification.collectAsStateWithLifecycle()
     val aiMessages by viewModel.aiMessages.collectAsStateWithLifecycle()
+    val apiKeySlots by viewModel.apiKeySlots.collectAsStateWithLifecycle()
     val isAiLoading by viewModel.isAiLoading.collectAsStateWithLifecycle()
 
     val walletAddressInput by viewModel.walletAddressInput.collectAsStateWithLifecycle()
@@ -177,6 +181,18 @@ fun MainScreen(
                     }
                 },
                 actions = {
+                    // Settings shortcut button
+                    IconButton(
+                        onClick = { currentTab = NavTab.SETTINGS },
+                        modifier = Modifier.testTag("topbar_settings_button")
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Paramètres Clés API",
+                            tint = if (currentTab == NavTab.SETTINGS) NeonEmerald else CyberCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     // Guide button
                     IconButton(onClick = { showGuide = true }) {
                         Icon(
@@ -213,6 +229,8 @@ fun MainScreen(
                             Text(
                                 text = tab.title,
                                 fontSize = 10.sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                             )
                         },
@@ -247,7 +265,8 @@ fun MainScreen(
                     onPauseMining = viewModel::pauseMining,
                     onResumeMining = viewModel::resumeMining,
                     onStopMining = viewModel::stopMining,
-                    onClearLogs = viewModel::clearLogs
+                    onClearLogs = viewModel::clearLogs,
+                    onOpenApiKeys = { currentTab = NavTab.SETTINGS }
                 )
 
                 NavTab.WALLETS -> WalletsScreen(
@@ -272,9 +291,16 @@ fun MainScreen(
                 NavTab.AI_ASSISTANT -> AiAssistantScreen(
                     messages = aiMessages,
                     isLoading = isAiLoading,
-                    currentApiKey = aiServerIpInput,
-                    onSaveApiKey = viewModel::updateAiServerIp,
-                    onSendPrompt = viewModel::sendAiPrompt
+                    apiKeys = apiKeySlots,
+                    onSaveApiKeys = viewModel::saveApiKeys,
+                    onSendPrompt = viewModel::sendAiPrompt,
+                    onOpenSettings = { currentTab = NavTab.SETTINGS }
+                )
+
+                NavTab.SETTINGS -> SettingsScreen(
+                    apiKeys = apiKeySlots,
+                    telemetry = telemetry,
+                    onSaveApiKeys = viewModel::saveApiKeys
                 )
             }
         }

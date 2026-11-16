@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Smartphone
@@ -107,6 +108,7 @@ fun DashboardScreen(
     onResumeMining: () -> Unit,
     onStopMining: () -> Unit,
     onClearLogs: () -> Unit,
+    onOpenApiKeys: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -310,6 +312,44 @@ fun DashboardScreen(
                                 color = CyberCyan,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val boostReady = telemetry.activeApiKeysCount >= 3
+                    val boostBadgeColor = if (boostReady) NeonEmerald else WarningAmber
+                    Surface(
+                        onClick = onOpenApiKeys,
+                        shape = RoundedCornerShape(8.dp),
+                        color = boostBadgeColor.copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, boostBadgeColor.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth().testTag("dashboard_api_keys_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Key, contentDescription = null, tint = boostBadgeColor, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (boostReady) {
+                                        "Multi-Clés API (${telemetry.activeApiKeysCount}) • Calcul & Réflexion ×${String.format("%.1f", telemetry.speedMultiplier)}"
+                                    } else {
+                                        "Clés API : ${telemetry.activeApiKeysCount}/3 • Ajoutez 3+ clés pour accélérer"
+                                    },
+                                    color = boostBadgeColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = "Gérer →",
+                                color = CyberCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }

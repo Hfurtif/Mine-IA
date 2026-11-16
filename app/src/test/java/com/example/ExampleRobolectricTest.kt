@@ -59,4 +59,28 @@ class ExampleRobolectricTest {
         assertEquals(0, telemetry.deviceGpuUsagePercent)
         assertTrue(telemetry.isAutonomousCloud)
     }
+
+    @Test
+    fun `preferences initialize at least 3 API key slots and persist multiple keys`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = com.example.data.local.AppPreferences(context)
+
+        val defaultSlots = prefs.getAiApiKeySlots()
+        assertTrue("Doit contenir au moins 3 emplacements de clés API", defaultSlots.size >= 3)
+
+        prefs.saveAiApiKeys(listOf("AIzaKeyOne111", "AIzaKeyTwo222", "AIzaKeyThree333", "AIzaKeyFour444"))
+        val active = prefs.getActiveAiApiKeys()
+        assertEquals(4, active.size)
+        assertTrue(active.contains("AIzaKeyThree333"))
+    }
+
+    @Test
+    fun `mining engine boosts speed multiplier with 3 or more API keys`() {
+        val engine = com.example.mining.MiningEngine()
+        engine.updateApiKeysCount(3)
+        val telemetry = engine.telemetry.value
+
+        assertEquals(3, telemetry.activeApiKeysCount)
+        assertTrue("Le multiplicateur doit être nettement supérieur à 1.0", telemetry.speedMultiplier >= 2.9)
+    }
 }
