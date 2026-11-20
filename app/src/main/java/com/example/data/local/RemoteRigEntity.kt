@@ -11,7 +11,7 @@ data class RemoteRigEntity(
     val host: String,
     val port: Int = 22,
     val username: String = "miner",
-    val assignedCrypto: String = "XMR",
+    val assignedCrypto: String = "BTC",
     val workerName: String = "rig1",
     val notes: String = "",
     val isOnline: Boolean = false,

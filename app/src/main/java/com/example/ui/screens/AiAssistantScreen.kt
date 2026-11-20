@@ -119,9 +119,9 @@ fun AiAssistantScreen(
 
     val quickPrompts = listOf(
         "Comment fonctionnent les 3 clés API pour accélérer l'IA ?",
-        "Quelle crypto rapporte le plus sur les serveurs IA ?",
+        "Comment maximiser mes gains Bitcoin (BTC) sur les serveurs IA ?",
         "Comment optimiser mes calculs cloud 24h/24 ?",
-        "Pourquoi mes gains varient selon les clés actives ?"
+        "Pourquoi mes gains BTC varient selon les clés actives ?"
     )
 
     val currentFilledCount = keyInputs.count { it.isNotBlank() }
@@ -456,7 +456,7 @@ fun AiAssistantScreen(
                 OutlinedTextField(
                     value = promptInput,
                     onValueChange = { promptInput = it },
-                    placeholder = { Text("Posez une question sur le minage IA...", color = TextMuted, fontSize = 13.sp) },
+                    placeholder = { Text("Posez une question sur le minage Bitcoin IA...", color = TextMuted, fontSize = 13.sp) },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("ai_prompt_input"),

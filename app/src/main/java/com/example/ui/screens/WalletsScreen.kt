@@ -272,7 +272,7 @@ fun WalletsScreen(
 
     if (showAddDialog) {
         AddWalletDialog(
-            initialCrypto = "XMR",
+            initialCrypto = "BTC",
             onDismiss = { showAddDialog = false },
             onSave = onAddWallet
         )

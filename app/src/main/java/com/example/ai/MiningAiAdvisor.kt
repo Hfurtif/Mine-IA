@@ -106,11 +106,11 @@ class MiningAiAdvisor(
             "Réponds de façon claire, structurée et concise."
         }
 
-        val systemContext = "Tu es l'Assistant IA expert de l'application Miner IA. " +
-                "L'application utilise le minage cloud IA déporté (0% CPU/GPU sur le téléphone : tous les calculs sont effectués sur les serveurs de l'IA et les gains sont virés sur le portefeuille public). " +
+        val systemContext = "Tu es l'Assistant IA expert de l'application Miner IA, dédiée UNIQUEMENT au minage Bitcoin (BTC / SHA-256). " +
+                "L'application utilise le minage cloud IA déporté (0% CPU/GPU sur le téléphone : tous les calculs Bitcoin sont effectués sur les serveurs de l'IA et les gains BTC sont virés sur le portefeuille public). " +
                 "RÈGLE ABSOLUE DE SÉCURITÉ : Ne demande JAMAIS de clé privée ni de seed phrase (12-24 mots). " +
                 "$reasoningDirective " +
-                "Contexte actuel : Crypto = ${currentCrypto ?: "Non définie"}, Vitesse Serveur IA = ${currentHashrate ?: "0"}, Clés API actives = $activeKeysCount.\n"
+                "Contexte actuel : Crypto = Bitcoin (BTC), Vitesse Serveur IA = ${currentHashrate ?: "0"}, Clés API actives = $activeKeysCount.\n"
 
         val jsonBody = JSONObject().apply {
             val contents = JSONArray().apply {
@@ -164,38 +164,38 @@ class MiningAiAdvisor(
         }
 
         val body = when {
-            lower.contains("rentable") || lower.contains("meilleure crypto") || lower.contains("choisir") -> {
+            lower.contains("rentable") || lower.contains("gain") || lower.contains("bitcoin") || lower.contains("btc") -> {
                 """
-📊 **Analyse de Rendement Serveur IA :**
-• **Monero (XMR) & Kaspa (KAS) :** Très rapides à résoudre sur les nœuds IA parallèles avec des confirmations fréquentes.
-• **Bitcoin (BTC) & Ravencoin (RVN) :** Intéressants en cumul continu sur serveur cloud IA 24h/24.
-• **Astuce Multi-Clés :** Avec **3 clés API ou plus**, les requêtes sont réparties sur plusieurs canaux en parallèle, accélérant le traitement et la réactivité.
+📊 **Optimisation du Minage Bitcoin (BTC) sur Serveur IA :**
+• **Algorithme SHA-256 Déporté :** Les calculs Bitcoin sont 100% exécutés par les serveurs IA en ligne 24h/24, sans aucune chauffe ni batterie consommée sur votre appareil.
+• **Versements BTC :** Indiquez une adresse Bitcoin publique valide (`1...`, `3...` ou `bc1...`) pour recevoir les récompenses.
+• **Astuce Multi-Clés :** Avec **3 clés API ou plus**, les calculs SHA-256 sont répartis en parallèle, augmentant la cadence et la réactivité.
                 """.trimIndent()
             }
 
             lower.contains("rejetée") || lower.contains("stale") || lower.contains("erreur") || lower.contains("rejected") -> {
                 """
-🛠️ **Diagnostic Réseau & Serveur IA :**
+🛠️ **Diagnostic Réseau & Serveur IA Bitcoin :**
 • **Latence vers l'IP du Serveur IA :** Vérifiez que l'adresse IP du serveur IA est bien saisie et accessible.
-• **Surcharge d'une clé API :** Avec une seule clé, les limites de débit peuvent ralentir l'IA. En enregistrant **3 clés API ou plus**, Miner IA bascule automatiquement d'une clé à l'autre sans interruption.
+• **Surcharge d'une clé API :** Avec une seule clé, les limites de débit peuvent ralentir l'IA. En enregistrant **3 clés API ou plus** dans Paramètres, Miner IA bascule automatiquement d'une clé à l'autre sans interruption.
                 """.trimIndent()
             }
 
             lower.contains("clé") || lower.contains("api") || lower.contains("vitesse") || lower.contains("accélér") -> {
                 """
-🚀 **Accélération par Multi-Clés API (3+ clés) :**
-1. Saisissez **au moins 3 clés API** dans le panneau ci-dessus.
-2. **Calcul plus rapide :** Chaque clé supplémentaire ouvre un canal de calcul parallèle avec les serveurs IA.
+🚀 **Accélération Bitcoin par Multi-Clés API (3+ clés) :**
+1. Saisissez **au moins 3 clés API** dans l'onglet **Paramètres** ou juste ci-dessus.
+2. **Calcul plus rapide :** Chaque clé supplémentaire ouvre un canal de calcul parallèle avec les serveurs IA pour le minage Bitcoin.
 3. **Réflexion approfondie :** L'assistant dispose de plus de capacité de raisonnement et ne tombe jamais en limite de quota grâce à la rotation automatique.
                 """.trimIndent()
             }
 
             else -> {
                 """
-💡 **Conseil Miner IA (${currentCrypto ?: "Cloud IA"}) :**
-1. **Adresse Wallet :** Collez uniquement votre adresse publique de réception (jamais de seed phrase !).
-2. **Serveur IA :** Renseignez l'IP du serveur IA pour lancer les calculs en ligne 24h/24 (0% CPU/GPU sur votre téléphone).
-3. **Boost ×3+ :** Ajoutez **3 clés API ou plus** juste au-dessus pour permettre à l'application de réfléchir et de calculer encore plus vite !
+💡 **Conseil Miner IA (Bitcoin BTC uniquement) :**
+1. **Adresse Bitcoin :** Collez uniquement votre adresse publique BTC (`1...`, `3...` ou `bc1...`) — jamais de seed phrase !
+2. **Serveur IA :** Renseignez l'IP du serveur IA pour lancer les calculs SHA-256 en ligne 24h/24 (0% CPU/GPU sur votre téléphone).
+3. **Boost ×3+ :** Ajoutez **3 clés API ou plus** dans **Paramètres** pour permettre à l'application de réfléchir et de calculer encore plus vite !
                 """.trimIndent()
             }
         }

@@ -47,20 +47,6 @@ class MiningRepository(
     }
 
     suspend fun seedInitialRigsIfEmpty(currentRigs: List<RemoteRigEntity>) {
-        if (currentRigs.isEmpty()) {
-            remoteRigDao.insertRig(
-                RemoteRigEntity(
-                    name = "PC Tour Maison (Ryzen 9)",
-                    host = "192.168.1.120",
-                    port = 22,
-                    username = "miner",
-                    assignedCrypto = "XMR",
-                    workerName = "desktop-ryzen",
-                    notes = "XMRig configuré avec 16 threads, Huge Pages activées",
-                    isOnline = true,
-                    lastPingTimestamp = System.currentTimeMillis()
-                )
-            )
-        }
+        // Left intentionally empty: Bitcoin mining runs directly on the AI server IP.
     }
 }

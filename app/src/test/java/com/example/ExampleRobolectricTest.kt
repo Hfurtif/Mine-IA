@@ -23,10 +23,18 @@ class ExampleRobolectricTest {
     }
 
     @Test
+    fun `supported cryptos contains only Bitcoin BTC`() {
+        val all = com.example.data.model.SupportedCryptos.ALL
+        assertEquals(1, all.size)
+        assertEquals("BTC", all.first().symbol)
+        assertEquals("Bitcoin", all.first().name)
+    }
+
+    @Test
     fun `security validator blocks seed phrase with critical alert`() {
         // A 12-word mnemonic phrase
         val seedPhrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        val result = SecurityValidator.validatePublicAddress("XMR", seedPhrase)
+        val result = SecurityValidator.validatePublicAddress("BTC", seedPhrase)
 
         assertTrue(
             "Must detect and block 12-word seed phrase",
@@ -35,19 +43,29 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `security validator allows valid Monero public address`() {
-        val validXmr = "48edfHu7V9Z84YzzMa6fUuiLiCWq7OjebcZKqTpHJS32GU2bU5eu4N4BJuV64gBRqVtxQBPRqWT6Y6aFQFiR2En7V5bExm7"
-        val result = SecurityValidator.validatePublicAddress("XMR", validXmr)
+    fun `security validator allows valid Bitcoin Bech32 and Legacy public addresses`() {
+        val validBech32 = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+        val validLegacy = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
 
-        assertTrue("Must allow valid Monero public address", result is AddressValidationResult.Valid)
+        assertTrue(
+            "Must allow valid Bitcoin Bech32 address",
+            SecurityValidator.validatePublicAddress("BTC", validBech32) is AddressValidationResult.Valid
+        )
+        assertTrue(
+            "Must allow valid Bitcoin Legacy address",
+            SecurityValidator.validatePublicAddress("BTC", validLegacy) is AddressValidationResult.Valid
+        )
     }
 
     @Test
-    fun `security validator allows valid Kaspa public address`() {
-        val validKaspa = "kaspa:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
-        val result = SecurityValidator.validatePublicAddress("KAS", validKaspa)
+    fun `security validator rejects non-Bitcoin addresses`() {
+        val moneroAddress = "48edfHu7V9Z84YzzMa6fUuiLiCWq7OjebcZKqTpHJS32GU2bU5eu4N4BJuV64gBRqVtxQBPRqWT6Y6aFQFiR2En7V5bExm7"
+        val result = SecurityValidator.validatePublicAddress("BTC", moneroAddress)
 
-        assertTrue("Must allow valid Kaspa public address", result is AddressValidationResult.Valid)
+        assertTrue(
+            "Must reject non-Bitcoin addresses",
+            result is AddressValidationResult.InvalidFormat
+        )
     }
 
     @Test

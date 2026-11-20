@@ -44,10 +44,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -336,15 +333,14 @@ fun TemperatureGauge(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddWalletDialog(
-    initialCrypto: String = "XMR",
+    initialCrypto: String = "BTC",
     onDismiss: () -> Unit,
     onSave: (name: String, cryptoSymbol: String, address: String, isDefault: Boolean) -> AddressValidationResult
 ) {
     var name by remember { mutableStateOf("") }
-    var selectedCrypto by remember { mutableStateOf(initialCrypto) }
+    val selectedCrypto = SupportedCryptos.BITCOIN.symbol
     var address by remember { mutableStateOf("") }
-    var isDefault by remember { mutableStateOf(true) }
-    var expandedDropdown by remember { mutableStateOf(false) }
+    val isDefault = true
 
     // Instant security live check
     var securityWarning by remember { mutableStateOf<String?>(null) }
@@ -436,46 +432,37 @@ fun AddWalletDialog(
                     }
                 }
 
-                // Crypto Selector Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = expandedDropdown,
-                    onExpandedChange = { expandedDropdown = !expandedDropdown }
+                // Badge fixe Bitcoin uniquement
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF7931A).copy(alpha = 0.14f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF7931A).copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    OutlinedTextField(
-                        value = SupportedCryptos.ALL.find { it.symbol == selectedCrypto }?.name ?: selectedCrypto,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Cryptomonnaie") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDropdown) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = CyberCyan,
-                            unfocusedBorderColor = DarkSurfaceVariant
-                        )
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedDropdown,
-                        onDismissRequest = { expandedDropdown = false }
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SupportedCryptos.ALL.forEach { crypto ->
-                            DropdownMenuItem(
-                                text = { Text("${crypto.name} (${crypto.symbol})") },
-                                onClick = {
-                                    selectedCrypto = crypto.symbol
-                                    expandedDropdown = false
-                                    checkSecurity(address)
-                                }
-                            )
-                        }
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF7931A))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Cryptomonnaie : Bitcoin (BTC • SHA-256)",
+                            color = Color(0xFFF7931A),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
                 }
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Nom du portefeuille (ex: Monero Ledger)") },
+                    label = { Text("Nom du portefeuille (ex: Bitcoin Ledger)") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("wallet_name_input"),
@@ -489,10 +476,10 @@ fun AddWalletDialog(
                 OutlinedTextField(
                     value = address,
                     onValueChange = { checkSecurity(it) },
-                    label = { Text("Adresse publique de réception") },
+                    label = { Text("Adresse publique Bitcoin (BTC)") },
                     placeholder = {
                         Text(
-                            SupportedCryptos.ALL.find { it.symbol == selectedCrypto }?.addressPrefixHint ?: "Adresse publique",
+                            SupportedCryptos.BITCOIN.addressPrefixHint,
                             color = TextMuted,
                             fontSize = 12.sp
                         )

@@ -41,10 +41,10 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     val wallets: StateFlow<List<WalletEntity>> = repository.allWallets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _selectedCrypto = MutableStateFlow<CryptoCurrency>(SupportedCryptos.ALL.first())
+    private val _selectedCrypto = MutableStateFlow<CryptoCurrency>(SupportedCryptos.BITCOIN)
     val selectedCrypto: StateFlow<CryptoCurrency> = _selectedCrypto.asStateFlow()
 
-    // Saisie directe de l'utilisateur : Adresse Wallet et Adresse IP du Serveur IA
+    // Saisie directe de l'utilisateur : Adresse Wallet Bitcoin et Adresse IP du Serveur IA
     val walletAddressInput = MutableStateFlow("")
     val aiServerIpInput = MutableStateFlow("")
 
@@ -55,7 +55,7 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         listOf(
             AiMessage(
                 isUser = false,
-                text = "Bonjour ! Je suis l'Assistant Miner IA. Entrez l'adresse de votre portefeuille et l'adresse IP de votre serveur IA. L'application transmet immédiatement tous les calculs au serveur IA et vire les récompenses sur votre wallet."
+                text = "Bonjour ! Je suis l'Assistant Miner IA spécialisé Bitcoin (BTC). Entrez votre adresse Bitcoin et l'adresse IP de votre serveur IA : l'application transmet immédiatement tous les calculs SHA-256 au serveur IA et vire vos gains BTC sur votre wallet."
             )
         )
     )
@@ -68,9 +68,8 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     val isAiLoading: StateFlow<Boolean> = _isAiLoading.asStateFlow()
 
     init {
-        val savedCryptoId = preferences.lastSelectedCryptoId
-        val initialCrypto = SupportedCryptos.findById(savedCryptoId)
-        _selectedCrypto.value = initialCrypto
+        _selectedCrypto.value = SupportedCryptos.BITCOIN
+        preferences.lastSelectedCryptoId = SupportedCryptos.BITCOIN.id
 
         // L'adresse wallet commence strictement vide : c'est à l'utilisateur de l'ajouter
         walletAddressInput.value = ""
@@ -82,8 +81,8 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun selectCrypto(crypto: CryptoCurrency) {
-        _selectedCrypto.value = crypto
-        preferences.lastSelectedCryptoId = crypto.id
+        _selectedCrypto.value = SupportedCryptos.BITCOIN
+        preferences.lastSelectedCryptoId = SupportedCryptos.BITCOIN.id
     }
 
     fun dismissNotification() {
@@ -174,7 +173,8 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun addWallet(name: String, cryptoSymbol: String, publicAddress: String, isDefault: Boolean): AddressValidationResult {
-        val validation = SecurityValidator.validatePublicAddress(cryptoSymbol, publicAddress)
+        val btcSymbol = SupportedCryptos.BITCOIN.symbol
+        val validation = SecurityValidator.validatePublicAddress(btcSymbol, publicAddress)
         if (validation !is AddressValidationResult.Valid) {
             return validation
         }
@@ -182,8 +182,8 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repository.saveWallet(
                 WalletEntity(
-                    name = name.ifBlank { "Wallet $cryptoSymbol" },
-                    cryptoSymbol = cryptoSymbol,
+                    name = name.ifBlank { "Wallet Bitcoin" },
+                    cryptoSymbol = btcSymbol,
                     publicAddress = publicAddress.trim(),
                     isDefault = isDefault
                 )

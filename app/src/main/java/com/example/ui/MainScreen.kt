@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
@@ -68,7 +67,6 @@ import com.example.data.model.MiningTarget
 import com.example.data.model.SupportedCryptos
 import com.example.ui.components.BeginnerGuideDialog
 import com.example.ui.screens.AiAssistantScreen
-import com.example.ui.screens.CryptosScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.WalletsScreen
@@ -88,7 +86,6 @@ import com.example.ui.theme.WarningAmber
 enum class NavTab(val title: String, val icon: ImageVector, val tag: String) {
     DASHBOARD("Minage", Icons.Default.Speed, "tab_dashboard"),
     WALLETS("Wallets", Icons.Default.AccountBalanceWallet, "tab_wallets"),
-    CRYPTOS("Cryptos", Icons.Default.MonetizationOn, "tab_cryptos"),
     AI_ASSISTANT("Assistant", Icons.Default.AutoAwesome, "tab_ai"),
     SETTINGS("Paramètres", Icons.Default.Settings, "tab_settings")
 }
@@ -173,7 +170,7 @@ fun MainScreen(
                                 }
                             }
                             Text(
-                                text = "Minage Automatique Déporté par IA",
+                                text = "Minage Cloud Bitcoin (BTC) par IA",
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
@@ -274,16 +271,8 @@ fun MainScreen(
                     onAddWallet = viewModel::addWallet,
                     onDeleteWallet = viewModel::deleteWallet,
                     onSelectWalletForMining = { wallet ->
-                        viewModel.selectCrypto(SupportedCryptos.ALL.find { it.symbol == wallet.cryptoSymbol } ?: viewModel.selectedCrypto.value)
+                        viewModel.selectCrypto(SupportedCryptos.BITCOIN)
                         viewModel.walletAddressInput.value = wallet.publicAddress
-                        currentTab = NavTab.DASHBOARD
-                    }
-                )
-
-                NavTab.CRYPTOS -> CryptosScreen(
-                    currentSelectedId = selectedCrypto.id,
-                    onSelectAndMine = { crypto ->
-                        viewModel.selectCrypto(crypto)
                         currentTab = NavTab.DASHBOARD
                     }
                 )

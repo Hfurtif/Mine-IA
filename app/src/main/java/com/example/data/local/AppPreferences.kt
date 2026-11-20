@@ -75,7 +75,7 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_DISCLAIMER_ACCEPTED, value).apply()
 
     var lastSelectedCryptoId: String
-        get() = prefs.getString(KEY_LAST_CRYPTO, "monero") ?: "monero"
+        get() = prefs.getString(KEY_LAST_CRYPTO, "bitcoin") ?: "bitcoin"
         set(value) = prefs.edit().putString(KEY_LAST_CRYPTO, value).apply()
 
     companion object {

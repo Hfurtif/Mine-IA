@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -224,8 +223,41 @@ fun DashboardScreen(
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFF7931A).copy(alpha = 0.16f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF7931A).copy(alpha = 0.55f)),
+                            modifier = Modifier.testTag("bitcoin_only_badge")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFF7931A))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Bitcoin (BTC) • SHA-256",
+                                    color = Color(0xFFF7931A),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Les calculs sont envoyés directement au serveur IA qui les résout et renvoie les résultats validés.",
+                        text = "Minage dédié Bitcoin : les calculs SHA-256 sont envoyés directement au serveur IA qui renvoie les résultats validés.",
                         color = TextSecondary,
                         fontSize = 11.sp
                     )
@@ -449,78 +481,7 @@ fun DashboardScreen(
             }
         }
 
-        // ÉTAPE 1 : CHOIX DE LA CRYPTOMONNAIE
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = DarkCard),
-                border = androidx.compose.foundation.BorderStroke(1.dp, DarkSurfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "1. Choisir la Cryptomonnaie :",
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "${selectedCrypto.name} (${selectedCrypto.symbol})",
-                            color = Color(selectedCrypto.accentColorHex),
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(SupportedCryptos.ALL) { crypto ->
-                            val isSelected = crypto.id == selectedCrypto.id
-                            val accentColor = Color(crypto.accentColorHex)
-
-                            Surface(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        onSelectCrypto(crypto)
-                                        if (addressInput.isNotBlank()) checkAddressSecurity(addressInput)
-                                    }
-                                    .testTag("crypto_btn_${crypto.symbol.lowercase()}"),
-                                color = if (isSelected) DarkSurfaceVariant else Color(0xFF0F1A30),
-                                shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) accentColor else DarkSurfaceVariant)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .clip(CircleShape)
-                                            .background(accentColor)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = crypto.symbol,
-                                        color = if (isSelected) TextPrimary else TextSecondary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ÉTAPE 2 : ADRESSE WALLET (VIDE, C'EST À L'UTILISATEUR D'AJOUTER SON ADRESSE)
+        // ÉTAPE 1 : ADRESSE WALLET BITCOIN (VIDE, C'EST À L'UTILISATEUR D'AJOUTER SON ADRESSE)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -534,7 +495,7 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "2. Adresse Wallet :",
+                            text = "1. Adresse Wallet Bitcoin (BTC) :",
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -563,7 +524,7 @@ fun DashboardScreen(
                     OutlinedTextField(
                         value = addressInput,
                         onValueChange = { checkAddressSecurity(it) },
-                        placeholder = { Text("Entrez ou collez votre adresse wallet...", color = TextMuted, fontSize = 12.sp) },
+                        placeholder = { Text("Entrez ou collez votre adresse Bitcoin (1..., 3..., bc1...)...", color = TextMuted, fontSize = 12.sp) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("wallet_address_main_input"),
@@ -577,7 +538,7 @@ fun DashboardScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Les gains des calculs résolus par l'IA seront directement virés sur cette adresse.",
+                        text = "Les gains Bitcoin (BTC) des calculs résolus par l'IA seront directement virés sur cette adresse.",
                         color = TextMuted,
                         fontSize = 10.sp
                     )
@@ -606,7 +567,7 @@ fun DashboardScreen(
             }
         }
 
-        // ÉTAPE 3 : ADRESSE IP DU SERVEUR IA (L'IA FAIT TOUS LES CALCULS)
+        // ÉTAPE 2 : ADRESSE IP DU SERVEUR IA (L'IA FAIT TOUS LES CALCULS BITCOIN)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -623,7 +584,7 @@ fun DashboardScreen(
                             Icon(Icons.Default.Dns, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "3. Adresse IP du Serveur IA :",
+                                text = "2. Adresse IP du Serveur IA :",
                                 color = TextPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
@@ -663,7 +624,7 @@ fun DashboardScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Dès que l'adresse IP est entrée, tous les calculs sont directement envoyés au serveur IA.",
+                        text = "Dès que l'adresse IP est entrée, tous les calculs Bitcoin sont directement envoyés au serveur IA.",
                         color = TextMuted,
                         fontSize = 10.sp
                     )
@@ -693,8 +654,8 @@ fun DashboardScreen(
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "DÉMARRER LES CALCULS SUR LE SERVEUR IA",
-                            fontSize = 13.sp,
+                            text = "DÉMARRER LE MINAGE BITCOIN SUR LE SERVEUR IA",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                     }
