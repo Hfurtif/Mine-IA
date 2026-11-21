@@ -101,4 +101,77 @@ class ExampleRobolectricTest {
         assertEquals(3, telemetry.activeApiKeysCount)
         assertTrue("Le multiplicateur doit être nettement supérieur à 1.0", telemetry.speedMultiplier >= 2.9)
     }
+
+    @Test
+    fun `mining engine exposes recent validated bitcoin transactions with date and amount`() {
+        val engine = com.example.mining.MiningEngine()
+        val transactions = engine.telemetry.value.recentTransactions
+
+        assertTrue("Doit contenir les dernières transactions Bitcoin validées", transactions.isNotEmpty())
+        transactions.forEach { tx ->
+            assertTrue("Le montant BTC doit être positif", tx.amountBtc > 0.0)
+            assertTrue("La date de transaction doit être valide", tx.timestamp > 0L)
+            assertTrue("Le numéro de bloc doit être valide", tx.blockNumber > 0L)
+        }
+    }
+
+    @Test
+    fun `mining engine exposes positive hashrate history for real-time line chart`() {
+        val engine = com.example.mining.MiningEngine()
+        val telemetry = engine.telemetry.value
+
+        assertTrue("L'historique du hashrate doit contenir au moins 2 points", telemetry.hashrateHistory.size >= 2)
+        assertTrue("Les valeurs du hashrate doivent être positives", telemetry.hashrateHistory.all { it > 0f })
+        assertTrue("Le pic de hashrate doit être supérieur ou égal au taux actuel", telemetry.peakHashrate >= telemetry.hashrate)
+    }
+
+    @Test
+    fun `mining engine logs error alert when an API key is unresponsive`() {
+        val engine = com.example.mining.MiningEngine()
+        engine.updateApiKeyHealth(unresponsiveCount = 1, failedKeyLabels = listOf("Clé API #2"))
+
+        val telemetry = engine.telemetry.value
+        assertEquals(1, telemetry.unresponsiveApiKeysCount)
+        assertTrue(
+            "Doit contenir un log d'erreur signalant la clé API qui ne répond pas",
+            telemetry.logs.any {
+                it.level == com.example.data.model.LogLevel.ERROR && it.message.contains("Clé API #2")
+            }
+        )
+    }
+
+    @Test
+    fun `mining ai advisor flags failing API keys as unresponsive`() = kotlinx.coroutines.test.runTest {
+        val mockClient = okhttp3.OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val url = chain.request().url.toString()
+                val code = if (url.contains("bad-key")) 403 else 200
+                val body = if (code == 200) {
+                    """{"candidates":[{"content":{"parts":[{"text":"Réponse OK"}]}}]}"""
+                } else {
+                    """{"error":{"message":"API key invalid"}}"""
+                }
+                okhttp3.Response.Builder()
+                    .request(chain.request())
+                    .protocol(okhttp3.Protocol.HTTP_1_1)
+                    .code(code)
+                    .message(if (code == 200) "OK" else "Forbidden")
+                    .body(okhttp3.ResponseBody.create(null, body))
+                    .build()
+            }
+            .build()
+
+        val advisor = com.example.ai.MiningAiAdvisor(client = mockClient)
+        val health = advisor.verifyApiKey("bad-key-123")
+        assertEquals(com.example.ai.ApiKeyState.UNRESPONSIVE, health.state)
+
+        val reply = advisor.askAdvisorWithHealth(
+            prompt = "Test",
+            customApiKeys = listOf("bad-key-123", "good-key-456")
+        )
+        assertTrue(
+            "La clé invalide doit être détectée comme ne répondant pas",
+            reply.keyResults["bad-key-123"]?.state == com.example.ai.ApiKeyState.UNRESPONSIVE
+        )
+    }
 }

@@ -48,6 +48,14 @@ data class MiningLogMessage(
     val message: String
 )
 
+data class BitcoinMiningTransaction(
+    val id: String,
+    val timestamp: Long,
+    val amountBtc: Double,
+    val blockNumber: Long,
+    val isSimulated: Boolean = true
+)
+
 object SupportedCryptos {
     val BITCOIN = CryptoCurrency(
         id = "bitcoin",

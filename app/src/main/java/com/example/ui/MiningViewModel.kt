@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.AiMessage
+import com.example.ai.ApiKeyHealth
+import com.example.ai.ApiKeyState
 import com.example.ai.MiningAiAdvisor
 import com.example.data.local.AppDatabase
 import com.example.data.local.AppPreferences
@@ -15,6 +17,8 @@ import com.example.mining.AddressValidationResult
 import com.example.mining.MiningEngine
 import com.example.mining.MiningTelemetry
 import com.example.mining.SecurityValidator
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +67,12 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _apiKeySlots = MutableStateFlow(listOf("", "", ""))
     val apiKeySlots: StateFlow<List<String>> = _apiKeySlots.asStateFlow()
+
+    private val _apiKeyHealth = MutableStateFlow<Map<String, ApiKeyHealth>>(emptyMap())
+    val apiKeyHealth: StateFlow<Map<String, ApiKeyHealth>> = _apiKeyHealth.asStateFlow()
+
+    private val _isCheckingApiKeys = MutableStateFlow(false)
+    val isCheckingApiKeys: StateFlow<Boolean> = _isCheckingApiKeys.asStateFlow()
 
     private val _isAiLoading = MutableStateFlow(false)
     val isAiLoading: StateFlow<Boolean> = _isAiLoading.asStateFlow()
@@ -155,8 +165,14 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         preferences.saveAiApiKeys(keys)
         val updatedSlots = preferences.getAiApiKeySlots(minSlots = 3)
         _apiKeySlots.value = updatedSlots
-        val activeCount = preferences.getActiveAiApiKeys().size
+        val activeKeys = preferences.getActiveAiApiKeys()
+        val activeCount = activeKeys.size
         engine.updateApiKeysCount(activeCount)
+
+        // Nettoyer les états de santé des clés supprimées
+        _apiKeyHealth.update { current ->
+            current.filterKeys { it in activeKeys }
+        }
 
         if (activeCount >= 3) {
             val multiplier = 1.0 + (activeCount * 0.65)
@@ -168,7 +184,60 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
                 "$activeCount clé(s) enregistrée(s). Ajoutez au moins 3 clés API pour débloquer la vitesse maximale !"
             )
         } else {
+            engine.updateApiKeyHealth(0)
             showNotification("Clés API effacées.")
+        }
+
+        if (activeCount > 0) {
+            verifySavedApiKeys(notifyOnSuccess = false)
+        }
+    }
+
+    fun verifySavedApiKeys(notifyOnSuccess: Boolean = true) {
+        val slots = _apiKeySlots.value
+        val activeKeys = slots.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (activeKeys.isEmpty()) {
+            engine.updateApiKeyHealth(0)
+            if (notifyOnSuccess) {
+                showNotification("Aucune clé API à vérifier.", true)
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _isCheckingApiKeys.value = true
+            _apiKeyHealth.update { current ->
+                current + activeKeys.associateWith {
+                    ApiKeyHealth(ApiKeyState.CHECKING, "Vérification en cours...")
+                }
+            }
+
+            val results = activeKeys.map { key ->
+                async { key to aiAdvisor.verifyApiKey(key) }
+            }.awaitAll().toMap()
+
+            _apiKeyHealth.update { current -> current + results }
+            _isCheckingApiKeys.value = false
+
+            val failedLabels = slots.mapIndexedNotNull { index, value ->
+                val trimmed = value.trim()
+                if (trimmed.isNotBlank() && results[trimmed]?.state == ApiKeyState.UNRESPONSIVE) {
+                    "Clé API #${index + 1}"
+                } else {
+                    null
+                }
+            }
+
+            engine.updateApiKeyHealth(failedLabels.size, failedLabels)
+
+            if (failedLabels.isNotEmpty()) {
+                showNotification(
+                    "⚠️ Alerte : ${failedLabels.joinToString(", ")} ne répond pas !",
+                    isError = true
+                )
+            } else if (notifyOnSuccess) {
+                showNotification("✅ Toutes les clés API (${activeKeys.size}) répondent normalement.")
+            }
         }
     }
 
@@ -208,13 +277,37 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             val activeKeys = preferences.getActiveAiApiKeys()
-            val answer = aiAdvisor.askAdvisor(
+            val reply = aiAdvisor.askAdvisorWithHealth(
                 prompt = userPrompt,
                 customApiKeys = activeKeys,
                 currentCrypto = _selectedCrypto.value.name,
                 currentHashrate = "${String.format("%.1f", telemetry.value.hashrate)} ${telemetry.value.hashrateUnit}"
             )
-            _aiMessages.update { it + AiMessage(isUser = false, text = answer) }
+
+            if (reply.keyResults.isNotEmpty()) {
+                _apiKeyHealth.update { current -> current + reply.keyResults }
+            }
+
+            val slots = _apiKeySlots.value
+            val failedLabels = slots.mapIndexedNotNull { index, value ->
+                val trimmed = value.trim()
+                if (trimmed.isNotBlank() && _apiKeyHealth.value[trimmed]?.state == ApiKeyState.UNRESPONSIVE) {
+                    "Clé API #${index + 1}"
+                } else {
+                    null
+                }
+            }
+            engine.updateApiKeyHealth(failedLabels.size, failedLabels)
+
+            if (reply.failedKeys.isNotEmpty()) {
+                val newlyFailedLabels = slots.mapIndexedNotNull { index, value ->
+                    if (value.trim() in reply.failedKeys) "Clé API #${index + 1}" else null
+                }
+                val labelText = if (newlyFailedLabels.isNotEmpty()) newlyFailedLabels.joinToString(", ") else "Une clé API"
+                showNotification("⚠️ Alerte : $labelText ne répond pas !", isError = true)
+            }
+
+            _aiMessages.update { it + AiMessage(isUser = false, text = reply.text) }
             _isAiLoading.value = false
         }
     }

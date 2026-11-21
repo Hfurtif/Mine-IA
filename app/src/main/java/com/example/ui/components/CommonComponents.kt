@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -57,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -95,6 +98,21 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.WarningAmber
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLine
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
+import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
+import com.patrykandpatrick.vico.compose.common.fill
+import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
+import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
+import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
+import com.patrykandpatrick.vico.core.common.shader.ShaderProvider
 
 @Composable
 fun StatusBadge(status: MiningStatus, modifier: Modifier = Modifier) {
@@ -255,6 +273,201 @@ fun HashrateSparkline(
             color = lineColor,
             style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
         )
+    }
+}
+
+@Composable
+fun RealtimeHashrateChartCard(
+    history: List<Float>,
+    currentHashrate: Double,
+    peakHashrate: Double,
+    hashrateUnit: String,
+    isActive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val modelProducer = remember { CartesianChartModelProducer() }
+    val chartData = remember(history) {
+        if (history.size >= 2) history else if (history.size == 1) listOf(history.first(), history.first()) else listOf(0f, 0f)
+    }
+    val averageHashrate = remember(chartData) {
+        if (chartData.isEmpty()) 0.0 else chartData.average()
+    }
+
+    LaunchedEffect(chartData) {
+        modelProducer.runTransaction {
+            lineSeries {
+                series(chartData.map { it.toDouble() })
+            }
+        }
+    }
+
+    val bitcoinOrange = Color(0xFFF7931A)
+    val axisLabel = rememberTextComponent(
+        color = TextSecondary,
+        textSize = 10.sp
+    )
+    val axisLine = rememberLineComponent(
+        fill = fill(DarkSurfaceVariant),
+        thickness = 1.dp
+    )
+    val guideline = rememberLineComponent(
+        fill = fill(DarkSurfaceVariant.copy(alpha = 0.45f)),
+        thickness = 1.dp
+    )
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("realtime_hashrate_chart_card"),
+        colors = CardDefaults.cardColors(containerColor = DarkCard),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Default.ShowChart,
+                        contentDescription = "Graphique du taux de hashage Bitcoin",
+                        tint = bitcoinOrange,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Évolution du Hashrate Bitcoin",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Graphique linéaire temps réel ($hashrateUnit)",
+                            color = TextMuted,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = (if (isActive) NeonEmerald else WarningAmber).copy(alpha = 0.14f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        (if (isActive) NeonEmerald else WarningAmber).copy(alpha = 0.45f)
+                    )
+                ) {
+                    Text(
+                        text = if (isActive) "Temps réel" else "En pause",
+                        color = if (isActive) NeonEmerald else WarningAmber,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.Black.copy(alpha = 0.3f)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                        Text("Actuel", color = TextMuted, fontSize = 9.sp)
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.1f", currentHashrate),
+                            color = CyberCyan,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.Black.copy(alpha = 0.3f)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                        Text("Moyenne", color = TextMuted, fontSize = 9.sp)
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.1f", averageHashrate),
+                            color = bitcoinOrange,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.Black.copy(alpha = 0.3f)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                        Text("Pic max", color = TextMuted, fontSize = 9.sp)
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.1f", peakHashrate),
+                            color = NeonEmerald,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .padding(horizontal = 6.dp, vertical = 8.dp)
+            ) {
+                CartesianChartHost(
+                    chart = rememberCartesianChart(
+                        rememberLineCartesianLayer(
+                            lineProvider = LineCartesianLayer.LineProvider.series(
+                                LineCartesianLayer.rememberLine(
+                                    fill = LineCartesianLayer.LineFill.single(fill(bitcoinOrange)),
+                                    areaFill = LineCartesianLayer.AreaFill.single(
+                                        fill(
+                                            ShaderProvider.verticalGradient(
+                                                bitcoinOrange.copy(alpha = 0.38f).toArgb(),
+                                                Color.Transparent.toArgb()
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+                        startAxis = VerticalAxis.rememberStart(
+                            label = axisLabel,
+                            line = axisLine,
+                            guideline = guideline
+                        ),
+                        bottomAxis = HorizontalAxis.rememberBottom(
+                            label = axisLabel,
+                            line = axisLine,
+                            guideline = null
+                        )
+                    ),
+                    modelProducer = modelProducer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(164.dp)
+                        .testTag("vico_hashrate_line_chart")
+                )
+            }
+        }
     }
 }
 

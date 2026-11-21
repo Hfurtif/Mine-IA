@@ -34,8 +34,10 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -80,6 +82,7 @@ import com.example.mining.MiningTelemetry
 import com.example.mining.SecurityValidator
 import com.example.ui.components.HashrateSparkline
 import com.example.ui.components.MetricStatCard
+import com.example.ui.components.RealtimeHashrateChartCard
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DarkBg
@@ -349,13 +352,21 @@ fun DashboardScreen(
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
-                    val boostReady = telemetry.activeApiKeysCount >= 3
-                    val boostBadgeColor = if (boostReady) NeonEmerald else WarningAmber
+                    val hasUnresponsiveKey = telemetry.unresponsiveApiKeysCount > 0
+                    val boostReady = telemetry.activeApiKeysCount >= 3 && !hasUnresponsiveKey
+                    val boostBadgeColor = when {
+                        hasUnresponsiveKey -> DangerRed
+                        boostReady -> NeonEmerald
+                        else -> WarningAmber
+                    }
                     Surface(
                         onClick = onOpenApiKeys,
                         shape = RoundedCornerShape(8.dp),
-                        color = boostBadgeColor.copy(alpha = 0.12f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, boostBadgeColor.copy(alpha = 0.45f)),
+                        color = boostBadgeColor.copy(alpha = if (hasUnresponsiveKey) 0.16f else 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            if (hasUnresponsiveKey) 1.5.dp else 1.dp,
+                            boostBadgeColor.copy(alpha = if (hasUnresponsiveKey) 0.9f else 0.45f)
+                        ),
                         modifier = Modifier.fillMaxWidth().testTag("dashboard_api_keys_banner")
                     ) {
                         Row(
@@ -364,13 +375,18 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.Key, contentDescription = null, tint = boostBadgeColor, modifier = Modifier.size(15.dp))
+                                Icon(
+                                    imageVector = if (hasUnresponsiveKey) Icons.Default.Warning else Icons.Default.Key,
+                                    contentDescription = if (hasUnresponsiveKey) "Alerte clé API" else null,
+                                    tint = boostBadgeColor,
+                                    modifier = Modifier.size(15.dp)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (boostReady) {
-                                        "Multi-Clés API (${telemetry.activeApiKeysCount}) • Calcul & Réflexion ×${String.format("%.1f", telemetry.speedMultiplier)}"
-                                    } else {
-                                        "Clés API : ${telemetry.activeApiKeysCount}/3 • Ajoutez 3+ clés pour accélérer"
+                                    text = when {
+                                        hasUnresponsiveKey -> "Alerte : ${telemetry.unresponsiveApiKeysCount} clé(s) API ne répond(ent) pas !"
+                                        boostReady -> "Multi-Clés API (${telemetry.activeApiKeysCount}) • Calcul & Réflexion ×${String.format("%.1f", telemetry.speedMultiplier)}"
+                                        else -> "Clés API : ${telemetry.activeApiKeysCount}/3 • Ajoutez 3+ clés pour accélérer"
                                     },
                                     color = boostBadgeColor,
                                     fontSize = 11.sp,
@@ -378,8 +394,8 @@ fun DashboardScreen(
                                 )
                             }
                             Text(
-                                text = "Gérer →",
-                                color = CyberCyan,
+                                text = if (hasUnresponsiveKey) "Vérifier →" else "Gérer →",
+                                color = if (hasUnresponsiveKey) DangerRed else CyberCyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -479,6 +495,17 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
+
+        // GRAPHIQUE LINÉAIRE EN TEMPS RÉEL DU TAUX DE HASHAGE BITCOIN (VICO)
+        item {
+            RealtimeHashrateChartCard(
+                history = telemetry.hashrateHistory,
+                currentHashrate = telemetry.hashrate,
+                peakHashrate = telemetry.peakHashrate,
+                hashrateUnit = telemetry.hashrateUnit,
+                isActive = telemetry.status == MiningStatus.MINING
+            )
         }
 
         // ÉTAPE 1 : ADRESSE WALLET BITCOIN (VIDE, C'EST À L'UTILISATEUR D'AJOUTER SON ADRESSE)
@@ -708,6 +735,144 @@ fun DashboardScreen(
                         Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Arrêter", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        // DERNIÈRES TRANSACTIONS BITCOIN VALIDÉES
+        item {
+            val dateFormatter = remember {
+                java.text.SimpleDateFormat("dd/MM/yyyy • HH:mm:ss", java.util.Locale.FRANCE)
+            }
+            val displayedTransactions = telemetry.recentTransactions.take(6)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("recent_btc_transactions_card"),
+                colors = CardDefaults.cardColors(containerColor = DarkCard),
+                border = androidx.compose.foundation.BorderStroke(1.dp, DarkSurfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = "Historique des transactions Bitcoin",
+                                tint = Color(0xFFF7931A),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Dernières Transactions Bitcoin",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = NeonEmerald.copy(alpha = 0.14f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, NeonEmerald.copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = "${telemetry.recentTransactions.size} validée(s)",
+                                color = NeonEmerald,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (displayedTransactions.isEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CurrencyBitcoin,
+                                contentDescription = null,
+                                tint = TextMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Aucune transaction Bitcoin validée pour le moment.",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            displayedTransactions.forEach { tx ->
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.Black.copy(alpha = 0.32f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, DarkSurfaceVariant),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btc_transaction_item_${tx.blockNumber}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(NeonEmerald.copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "Transaction validée",
+                                                    tint = NeonEmerald,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Bloc #${tx.blockNumber} • Validée",
+                                                    color = TextPrimary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = dateFormatter.format(java.util.Date(tx.timestamp)),
+                                                    color = TextMuted,
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "+${String.format(java.util.Locale.US, "%.6f", tx.amountBtc)} BTC",
+                                            color = NeonEmerald,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

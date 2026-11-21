@@ -38,6 +38,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.ai.ApiKeyState
 import com.example.data.model.MiningStatus
 import com.example.data.model.MiningTarget
 import com.example.data.model.SupportedCryptos
@@ -105,12 +107,20 @@ fun MainScreen(
     val notification by viewModel.notification.collectAsStateWithLifecycle()
     val aiMessages by viewModel.aiMessages.collectAsStateWithLifecycle()
     val apiKeySlots by viewModel.apiKeySlots.collectAsStateWithLifecycle()
+    val apiKeyHealth by viewModel.apiKeyHealth.collectAsStateWithLifecycle()
+    val isCheckingApiKeys by viewModel.isCheckingApiKeys.collectAsStateWithLifecycle()
     val isAiLoading by viewModel.isAiLoading.collectAsStateWithLifecycle()
 
     val walletAddressInput by viewModel.walletAddressInput.collectAsStateWithLifecycle()
     val aiServerIpInput by viewModel.aiServerIpInput.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    var lastSnackbarIsError by remember { mutableStateOf(false) }
+
+    val hasUnresponsiveKey = apiKeySlots.any { slot ->
+        val trimmed = slot.trim()
+        trimmed.isNotBlank() && apiKeyHealth[trimmed]?.state == ApiKeyState.UNRESPONSIVE
+    }
 
     // Android back button: return to Dashboard tab before exiting
     BackHandler(enabled = currentTab != NavTab.DASHBOARD) {
@@ -119,6 +129,7 @@ fun MainScreen(
 
     LaunchedEffect(notification) {
         notification?.let {
+            lastSnackbarIsError = it.isError
             snackbarHostState.showSnackbar(it.message)
             viewModel.dismissNotification()
         }
@@ -127,7 +138,17 @@ fun MainScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = DarkBg,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = if (lastSnackbarIsError) DangerRed else DarkSurface,
+                    contentColor = if (lastSnackbarIsError) Color.White else TextPrimary,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag(if (lastSnackbarIsError) "error_alert_snackbar" else "info_snackbar")
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -183,12 +204,27 @@ fun MainScreen(
                         onClick = { currentTab = NavTab.SETTINGS },
                         modifier = Modifier.testTag("topbar_settings_button")
                     ) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Paramètres Clés API",
-                            tint = if (currentTab == NavTab.SETTINGS) NeonEmerald else CyberCyan,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Box {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Paramètres Clés API",
+                                tint = when {
+                                    hasUnresponsiveKey -> DangerRed
+                                    currentTab == NavTab.SETTINGS -> NeonEmerald
+                                    else -> CyberCyan
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            if (hasUnresponsiveKey) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(DangerRed)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
+                        }
                     }
                     // Guide button
                     IconButton(onClick = { showGuide = true }) {
@@ -281,6 +317,7 @@ fun MainScreen(
                     messages = aiMessages,
                     isLoading = isAiLoading,
                     apiKeys = apiKeySlots,
+                    apiKeyHealth = apiKeyHealth,
                     onSaveApiKeys = viewModel::saveApiKeys,
                     onSendPrompt = viewModel::sendAiPrompt,
                     onOpenSettings = { currentTab = NavTab.SETTINGS }
@@ -288,8 +325,11 @@ fun MainScreen(
 
                 NavTab.SETTINGS -> SettingsScreen(
                     apiKeys = apiKeySlots,
+                    apiKeyHealth = apiKeyHealth,
+                    isCheckingApiKeys = isCheckingApiKeys,
                     telemetry = telemetry,
-                    onSaveApiKeys = viewModel::saveApiKeys
+                    onSaveApiKeys = viewModel::saveApiKeys,
+                    onVerifyApiKeys = { viewModel.verifySavedApiKeys(notifyOnSuccess = true) }
                 )
             }
         }

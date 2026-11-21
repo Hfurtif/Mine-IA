@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -67,6 +68,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.AiMessage
+import com.example.ai.ApiKeyHealth
+import com.example.ai.ApiKeyState
 import com.example.ui.components.BeginnerGuideDialog
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.DangerRed
@@ -84,6 +87,7 @@ fun AiAssistantScreen(
     messages: List<AiMessage>,
     isLoading: Boolean,
     apiKeys: List<String>,
+    apiKeyHealth: Map<String, ApiKeyHealth> = emptyMap(),
     onSaveApiKeys: (List<String>) -> Unit,
     onSendPrompt: (String) -> Unit,
     onOpenSettings: () -> Unit = {},
@@ -125,8 +129,13 @@ fun AiAssistantScreen(
     )
 
     val currentFilledCount = keyInputs.count { it.isNotBlank() }
+    val unresponsiveCount = keyInputs.count { key ->
+        val trimmed = key.trim()
+        trimmed.isNotBlank() && apiKeyHealth[trimmed]?.state == ApiKeyState.UNRESPONSIVE
+    }
     val boostMultiplier = if (activeSavedCount == 0) 1.0 else 1.0 + (activeSavedCount * 0.65)
     val badgeColor = when {
+        unresponsiveCount > 0 -> DangerRed
         activeSavedCount >= 3 -> NeonEmerald
         activeSavedCount > 0 -> WarningAmber
         else -> CyberCyan
@@ -142,8 +151,13 @@ fun AiAssistantScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = androidx.compose.foundation.BorderStroke(1.dp, badgeColor.copy(alpha = 0.45f))
+            colors = CardDefaults.cardColors(
+                containerColor = if (unresponsiveCount > 0) DangerRed.copy(alpha = 0.1f) else DarkCard
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                if (unresponsiveCount > 0) 1.5.dp else 1.dp,
+                badgeColor.copy(alpha = if (unresponsiveCount > 0) 0.9f else 0.45f)
+            )
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(
@@ -154,12 +168,21 @@ fun AiAssistantScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(18.dp))
+                        Icon(
+                            imageVector = if (unresponsiveCount > 0) Icons.Default.Warning else Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = if (unresponsiveCount > 0) DangerRed else CyberCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
                         Column {
                             Text("Multi-Clés API (Min. 3 clés)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text(
-                                text = "$activeSavedCount clé(s) active(s) • Boost ×${String.format("%.1f", boostMultiplier)}",
+                                text = if (unresponsiveCount > 0) {
+                                    "⚠️ $unresponsiveCount clé(s) ne répond(ent) pas !"
+                                } else {
+                                    "$activeSavedCount clé(s) active(s) • Boost ×${String.format("%.1f", boostMultiplier)}"
+                                },
                                 color = badgeColor,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -231,6 +254,8 @@ fun AiAssistantScreen(
                         ) {
                             keyInputs.forEachIndexed { index, keyValue ->
                                 val isVisible = visibleKeyIndices[index] == true
+                                val health = apiKeyHealth[keyValue.trim()]
+                                val isUnresponsive = keyValue.isNotBlank() && health?.state == ApiKeyState.UNRESPONSIVE
                                 val slotTitle = when (index) {
                                     0 -> "Clé API #1 (Principale)"
                                     1 -> "Clé API #2 (Réflexion & Relais)"
@@ -238,46 +263,71 @@ fun AiAssistantScreen(
                                     else -> "Clé API #${index + 1} (Turbo)"
                                 }
 
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedTextField(
-                                        value = keyValue,
-                                        onValueChange = { newValue -> keyInputs[index] = newValue },
-                                        label = { Text(slotTitle, fontSize = 11.sp) },
-                                        placeholder = { Text("AIzaSy... ou clé serveur IA", fontSize = 11.sp) },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.Key, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
-                                        },
-                                        trailingIcon = {
-                                            IconButton(onClick = { visibleKeyIndices[index] = !isVisible }) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = keyValue,
+                                            onValueChange = { newValue -> keyInputs[index] = newValue },
+                                            label = {
+                                                Text(
+                                                    text = if (isUnresponsive) "$slotTitle • Ne répond pas" else slotTitle,
+                                                    fontSize = 11.sp
+                                                )
+                                            },
+                                            placeholder = { Text("AIzaSy... ou clé serveur IA", fontSize = 11.sp) },
+                                            leadingIcon = {
                                                 Icon(
-                                                    imageVector = if (isVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                                    contentDescription = "Afficher/Masquer",
-                                                    tint = TextSecondary,
+                                                    imageVector = if (isUnresponsive) Icons.Default.Warning else Icons.Default.Key,
+                                                    contentDescription = null,
+                                                    tint = if (isUnresponsive) DangerRed else CyberCyan,
                                                     modifier = Modifier.size(16.dp)
                                                 )
-                                            }
-                                        },
-                                        visualTransformation = if (isVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                        singleLine = true,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("ai_api_key_input_$index"),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = CyberCyan,
-                                            unfocusedBorderColor = DarkSurfaceVariant
+                                            },
+                                            trailingIcon = {
+                                                IconButton(onClick = { visibleKeyIndices[index] = !isVisible }) {
+                                                    Icon(
+                                                        imageVector = if (isVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                        contentDescription = "Afficher/Masquer",
+                                                        tint = TextSecondary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            },
+                                            isError = isUnresponsive,
+                                            visualTransformation = if (isVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("ai_api_key_input_$index"),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = if (isUnresponsive) DangerRed else CyberCyan,
+                                                unfocusedBorderColor = if (isUnresponsive) DangerRed else DarkSurfaceVariant,
+                                                errorBorderColor = DangerRed,
+                                                errorTextColor = DangerRed
+                                            )
                                         )
-                                    )
 
-                                    if (index >= 3) {
-                                        IconButton(
-                                            onClick = { keyInputs.removeAt(index) },
-                                            modifier = Modifier.size(36.dp)
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Supprimer cette clé", tint = DangerRed, modifier = Modifier.size(18.dp))
+                                        if (index >= 3) {
+                                            IconButton(
+                                                onClick = { keyInputs.removeAt(index) },
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Supprimer cette clé", tint = DangerRed, modifier = Modifier.size(18.dp))
+                                            }
                                         }
+                                    }
+
+                                    if (isUnresponsive) {
+                                        Text(
+                                            text = "⚠️ ${health?.message ?: "Cette clé API ne répond pas"}",
+                                            color = DangerRed,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                                        )
                                     }
                                 }
                             }

@@ -17,10 +17,28 @@ data class AiMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+enum class ApiKeyState {
+    UNCHECKED,
+    CHECKING,
+    HEALTHY,
+    UNRESPONSIVE
+}
+
+data class ApiKeyHealth(
+    val state: ApiKeyState = ApiKeyState.UNCHECKED,
+    val message: String? = null
+)
+
+data class AdvisorReply(
+    val text: String,
+    val keyResults: Map<String, ApiKeyHealth> = emptyMap(),
+    val failedKeys: List<String> = emptyList()
+)
+
 class MiningAiAdvisor(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
         .build()
 ) {
 
@@ -43,13 +61,66 @@ class MiningAiAdvisor(
         return cleaned
     }
 
+    /**
+     * Vérifie si une clé API répond auprès du serveur Gemini.
+     */
+    suspend fun verifyApiKey(apiKey: String): ApiKeyHealth = withContext(Dispatchers.IO) {
+        val trimmed = apiKey.trim()
+        if (trimmed.isBlank()) {
+            return@withContext ApiKeyHealth(ApiKeyState.UNCHECKED, null)
+        }
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash?key=$trimmed"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                when {
+                    response.isSuccessful -> ApiKeyHealth(
+                        state = ApiKeyState.HEALTHY,
+                        message = "Clé API active et joignable"
+                    )
+                    response.code == 400 || response.code == 401 || response.code == 403 -> ApiKeyHealth(
+                        state = ApiKeyState.UNRESPONSIVE,
+                        message = "Clé invalide ou refusée (HTTP ${response.code})"
+                    )
+                    response.code == 429 -> ApiKeyHealth(
+                        state = ApiKeyState.UNRESPONSIVE,
+                        message = "Quota dépassé (HTTP 429)"
+                    )
+                    else -> ApiKeyHealth(
+                        state = ApiKeyState.UNRESPONSIVE,
+                        message = "Aucune réponse valide (HTTP ${response.code})"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            ApiKeyHealth(
+                state = ApiKeyState.UNRESPONSIVE,
+                message = "Ne répond pas (${e.javaClass.simpleName})"
+            )
+        }
+    }
+
     suspend fun askAdvisor(
         prompt: String,
         customApiKeys: List<String>,
         currentCrypto: String? = null,
         currentHashrate: String? = null
-    ): String = withContext(Dispatchers.IO) {
+    ): String {
+        return askAdvisorWithHealth(prompt, customApiKeys, currentCrypto, currentHashrate).text
+    }
+
+    suspend fun askAdvisorWithHealth(
+        prompt: String,
+        customApiKeys: List<String>,
+        currentCrypto: String? = null,
+        currentHashrate: String? = null
+    ): AdvisorReply = withContext(Dispatchers.IO) {
         val activeKeys = getEffectiveApiKeys(customApiKeys)
+        val keyResults = mutableMapOf<String, ApiKeyHealth>()
+        val failedKeys = mutableListOf<String>()
 
         if (activeKeys.isNotEmpty()) {
             // Rotation & bascule automatique entre toutes les clés API pour réfléchir plus vite et éviter les quotas
@@ -64,7 +135,7 @@ class MiningAiAdvisor(
 
             for ((attemptIdx, key) in orderedKeys.withIndex()) {
                 try {
-                    val response = callGeminiApi(
+                    val result = callGeminiApi(
                         userPrompt = prompt,
                         apiKey = key,
                         currentCrypto = currentCrypto,
@@ -72,22 +143,46 @@ class MiningAiAdvisor(
                         activeKeysCount = activeKeys.size,
                         deepReasoning = deepReasoningMode
                     )
-                    if (response.isNotBlank() && !response.startsWith("Erreur API (")) {
-                        val prefix = if (deepReasoningMode) {
-                            "⚡ [Réflexion Multi-Clés ×${activeKeys.size} • Nœud #${((startIndex + attemptIdx) % activeKeys.size) + 1}]\n"
+                    if (result.isSuccess) {
+                        val responseText = result.getOrNull().orEmpty()
+                        if (responseText.isNotBlank()) {
+                            keyResults[key] = ApiKeyHealth(ApiKeyState.HEALTHY, "Réponse reçue")
+                            val prefix = if (deepReasoningMode) {
+                                "⚡ [Réflexion Multi-Clés ×${activeKeys.size} • Nœud #${((startIndex + attemptIdx) % activeKeys.size) + 1}]\n"
+                            } else {
+                                ""
+                            }
+                            return@withContext AdvisorReply(
+                                text = prefix + responseText,
+                                keyResults = keyResults,
+                                failedKeys = failedKeys
+                            )
                         } else {
-                            ""
+                            keyResults[key] = ApiKeyHealth(ApiKeyState.UNRESPONSIVE, "Réponse vide du serveur")
+                            failedKeys.add(key)
                         }
-                        return@withContext prefix + response
+                    } else {
+                        val err = result.exceptionOrNull()?.message ?: "Clé API ne répond pas"
+                        keyResults[key] = ApiKeyHealth(ApiKeyState.UNRESPONSIVE, err)
+                        failedKeys.add(key)
                     }
-                } catch (_: Exception) {
-                    // Failover automatique vers la clé API suivante
+                } catch (e: Exception) {
+                    keyResults[key] = ApiKeyHealth(
+                        ApiKeyState.UNRESPONSIVE,
+                        "Ne répond pas (${e.javaClass.simpleName})"
+                    )
+                    failedKeys.add(key)
                 }
             }
         }
 
         // Moteur d'expertise intégré si hors-ligne ou clés non encore activées
-        generateExpertOfflineResponse(prompt, currentCrypto, activeKeys.size)
+        val offlineText = generateExpertOfflineResponse(prompt, currentCrypto, activeKeys.size)
+        AdvisorReply(
+            text = offlineText,
+            keyResults = keyResults,
+            failedKeys = failedKeys
+        )
     }
 
     private fun callGeminiApi(
@@ -97,7 +192,7 @@ class MiningAiAdvisor(
         currentHashrate: String?,
         activeKeysCount: Int,
         deepReasoning: Boolean
-    ): String {
+    ): Result<String> {
         val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
 
         val reasoningDirective = if (deepReasoning) {
@@ -132,21 +227,21 @@ class MiningAiAdvisor(
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                return "Erreur API (${response.code}) : Vérifiez votre clé API ou quota."
+                return Result.failure(IllegalStateException("Erreur HTTP ${response.code}"))
             }
-            val responseBody = response.body?.string() ?: return ""
+            val responseBody = response.body?.string() ?: return Result.success("")
             val json = JSONObject(responseBody)
-            val candidates = json.optJSONArray("candidates") ?: return ""
+            val candidates = json.optJSONArray("candidates") ?: return Result.success("")
             if (candidates.length() > 0) {
                 val firstCandidate = candidates.getJSONObject(0)
                 val content = firstCandidate.optJSONObject("content")
                 val parts = content?.optJSONArray("parts")
                 if (parts != null && parts.length() > 0) {
-                    return parts.getJSONObject(0).optString("text", "")
+                    return Result.success(parts.getJSONObject(0).optString("text", ""))
                 }
             }
         }
-        return ""
+        return Result.success("")
     }
 
     private fun generateExpertOfflineResponse(

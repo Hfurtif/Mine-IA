@@ -1,5 +1,6 @@
 package com.example.mining
 
+import com.example.data.model.BitcoinMiningTransaction
 import com.example.data.model.CryptoCurrency
 import com.example.data.model.LogLevel
 import com.example.data.model.MiningLogMessage
@@ -40,7 +41,9 @@ data class MiningTelemetry(
     val deviceGpuUsagePercent: Int = 0,
     val isAutonomousCloud: Boolean = true,
     val activeApiKeysCount: Int = 0,
+    val unresponsiveApiKeysCount: Int = 0,
     val speedMultiplier: Double = 1.0,
+    val recentTransactions: List<BitcoinMiningTransaction> = defaultInitialBitcoinTransactions(),
     val logs: List<MiningLogMessage> = listOf(
         MiningLogMessage(level = LogLevel.INFO, message = "Tableau de bord : Minage Actif avec calculs en direct."),
         MiningLogMessage(level = LogLevel.SUCCESS, message = "Minage Cloud Autonome : 0% CPU/GPU sur votre téléphone. L'IA calcule 24h/24 en ligne."),
@@ -48,6 +51,33 @@ data class MiningTelemetry(
     ),
     val statusMessage: String = "Minage Actif (Serveur IA)"
 )
+
+private fun defaultInitialBitcoinTransactions(): List<BitcoinMiningTransaction> {
+    val now = System.currentTimeMillis()
+    return listOf(
+        BitcoinMiningTransaction(
+            id = "tx-init-849268",
+            timestamp = now - 60_000L,
+            amountBtc = 0.000182,
+            blockNumber = 849268L,
+            isSimulated = true
+        ),
+        BitcoinMiningTransaction(
+            id = "tx-init-849267",
+            timestamp = now - 240_000L,
+            amountBtc = 0.000159,
+            blockNumber = 849267L,
+            isSimulated = true
+        ),
+        BitcoinMiningTransaction(
+            id = "tx-init-849266",
+            timestamp = now - 480_000L,
+            amountBtc = 0.000144,
+            blockNumber = 849266L,
+            isSimulated = true
+        )
+    )
+}
 
 class MiningEngine(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
@@ -83,6 +113,28 @@ class MiningEngine(
             state.copy(
                 activeApiKeysCount = safeCount,
                 speedMultiplier = multiplier,
+                logs = updatedLogs
+            )
+        }
+    }
+
+    /**
+     * Met à jour l'état de santé des clés API et journalise une alerte rouge si une clé ne répond pas.
+     */
+    fun updateApiKeyHealth(unresponsiveCount: Int, failedKeyLabels: List<String> = emptyList()) {
+        val safeUnresponsive = unresponsiveCount.coerceAtLeast(0)
+        _telemetry.update { state ->
+            val updatedLogs = if (safeUnresponsive > 0) {
+                val labels = if (failedKeyLabels.isNotEmpty()) failedKeyLabels.joinToString(", ") else "$safeUnresponsive clé(s) API"
+                (state.logs + MiningLogMessage(
+                    level = LogLevel.ERROR,
+                    message = "⚠️ ALERTE : $labels ne répond pas ! Vérifiez vos clés API dans Paramètres."
+                )).takeLast(60)
+            } else {
+                state.logs
+            }
+            state.copy(
+                unresponsiveApiKeysCount = safeUnresponsive,
                 logs = updatedLogs
             )
         }
@@ -201,6 +253,15 @@ class MiningEngine(
                 }
 
                 _telemetry.update { state ->
+                    val newTx = BitcoinMiningTransaction(
+                        id = "tx-$currentBlockNumber-${System.currentTimeMillis()}",
+                        timestamp = System.currentTimeMillis(),
+                        amountBtc = singleReward,
+                        blockNumber = currentBlockNumber,
+                        isSimulated = state.isMockSimulation
+                    )
+                    val updatedTransactions = (listOf(newTx) + state.recentTransactions).take(10)
+
                     state.copy(
                         status = MiningStatus.MINING,
                         hashrate = rate,
@@ -212,6 +273,7 @@ class MiningEngine(
                         aiLatencyMs = latency,
                         totalAccumulatedCrypto = totalReward,
                         totalAccumulatedEur = totalEur,
+                        recentTransactions = updatedTransactions,
                         activeAiPhase = if (state.isMockSimulation) "Minage Actif (Calculs factices en attente du serveur IA)" else "Minage Actif - Calculs IA (${state.aiServerIp})",
                         statusMessage = if (state.isMockSimulation) "Minage Actif (Données factices)" else "Minage Actif (Serveur IA)",
                         logs = (state.logs + logMessages).takeLast(60)

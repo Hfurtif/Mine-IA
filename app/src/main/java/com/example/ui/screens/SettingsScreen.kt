@@ -34,10 +34,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -64,6 +66,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.ApiKeyHealth
+import com.example.ai.ApiKeyState
 import com.example.mining.MiningTelemetry
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.DangerRed
@@ -79,8 +83,11 @@ import com.example.ui.theme.WarningAmber
 @Composable
 fun SettingsScreen(
     apiKeys: List<String>,
+    apiKeyHealth: Map<String, ApiKeyHealth> = emptyMap(),
+    isCheckingApiKeys: Boolean = false,
     telemetry: MiningTelemetry,
     onSaveApiKeys: (List<String>) -> Unit,
+    onVerifyApiKeys: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -108,13 +115,20 @@ fun SettingsScreen(
     val optimizationProgress = (draftFilledCount / 3f).coerceIn(0f, 1f)
     val hasUnsavedChanges = keyInputs.map { it.trim() } != apiKeys.map { it.trim() }
 
+    val unresponsiveCount = keyInputs.count { value ->
+        val trimmed = value.trim()
+        trimmed.isNotBlank() && apiKeyHealth[trimmed]?.state == ApiKeyState.UNRESPONSIVE
+    }
+
     val statusColor = when {
+        unresponsiveCount > 0 -> DangerRed
         draftFilledCount >= 3 -> NeonEmerald
         draftFilledCount > 0 -> WarningAmber
         else -> CyberCyan
     }
 
     val statusLabel = when {
+        unresponsiveCount > 0 -> "Alerte : $unresponsiveCount clé(s) ne répond(ent) pas"
         draftFilledCount >= 4 -> "Ultra Parallèle ($draftFilledCount clés)"
         draftFilledCount == 3 -> "Optimisation Maximale (3 clés)"
         draftFilledCount in 1..2 -> "Partiel ($draftFilledCount/3 clés)"
@@ -249,6 +263,46 @@ fun SettingsScreen(
             }
         }
 
+        // Alerte rouge si au moins une clé API ne répond pas
+        if (unresponsiveCount > 0) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_api_key_alert_banner"),
+                    colors = CardDefaults.cardColors(containerColor = DangerRed.copy(alpha = 0.16f)),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, DangerRed)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Alerte clé API",
+                            tint = DangerRed,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Alerte : $unresponsiveCount clé(s) API ne répond(ent) pas !",
+                                color = DangerRed,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Les clés en rouge ci-dessous sont injoignables ou invalides. Remplacez-les ou relancez un test.",
+                                color = TextPrimary,
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Titre de section des champs manuels
         item {
             Row(
@@ -282,6 +336,11 @@ fun SettingsScreen(
         itemsIndexed(keyInputs) { index, keyValue ->
             val isVisible = visibleKeyIndices[index] == true
             val isFilled = keyValue.isNotBlank()
+            val health = apiKeyHealth[keyValue.trim()]
+            val isUnresponsive = isFilled && health?.state == ApiKeyState.UNRESPONSIVE
+            val isHealthy = isFilled && health?.state == ApiKeyState.HEALTHY
+            val isChecking = isFilled && health?.state == ApiKeyState.CHECKING
+
             val slotTitle = when (index) {
                 0 -> "Clé API #1 • Nœud Principal"
                 1 -> "Clé API #2 • Réflexion & Relais"
@@ -289,12 +348,36 @@ fun SettingsScreen(
                 else -> "Clé API #${index + 1} • Accélération Turbo"
             }
 
+            val cardBorderColor = when {
+                isUnresponsive -> DangerRed
+                isHealthy -> NeonEmerald
+                isFilled -> NeonEmerald.copy(alpha = 0.45f)
+                else -> DarkSurfaceVariant
+            }
+            val cardBgColor = if (isUnresponsive) DangerRed.copy(alpha = 0.08f) else DarkCard
+
+            val badgeText = when {
+                isUnresponsive -> "Ne répond pas"
+                isChecking -> "Test..."
+                isHealthy -> "Active"
+                isFilled -> "Prête"
+                else -> "Vide"
+            }
+            val badgeColor = when {
+                isUnresponsive -> DangerRed
+                isChecking -> WarningAmber
+                isFilled -> NeonEmerald
+                else -> TextMuted
+            }
+
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = DarkCard),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_api_key_card_$index"),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
                 border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (isFilled) NeonEmerald.copy(alpha = 0.45f) else DarkSurfaceVariant
+                    if (isUnresponsive) 1.5.dp else 1.dp,
+                    cardBorderColor
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -305,15 +388,23 @@ fun SettingsScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = if (isFilled) Icons.Default.CheckCircle else Icons.Default.Key,
-                                contentDescription = null,
-                                tint = if (isFilled) NeonEmerald else CyberCyan,
+                                imageVector = when {
+                                    isUnresponsive -> Icons.Default.Warning
+                                    isFilled -> Icons.Default.CheckCircle
+                                    else -> Icons.Default.Key
+                                },
+                                contentDescription = if (isUnresponsive) "Clé API ne répond pas" else null,
+                                tint = when {
+                                    isUnresponsive -> DangerRed
+                                    isFilled -> NeonEmerald
+                                    else -> CyberCyan
+                                },
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = slotTitle,
-                                color = TextPrimary,
+                                color = if (isUnresponsive) DangerRed else TextPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -322,11 +413,11 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = (if (isFilled) NeonEmerald else TextMuted).copy(alpha = 0.14f)
+                                color = badgeColor.copy(alpha = 0.16f)
                             ) {
                                 Text(
-                                    text = if (isFilled) "Prête" else "Vide",
-                                    color = if (isFilled) NeonEmerald else TextMuted,
+                                    text = badgeText,
+                                    color = badgeColor,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -363,6 +454,7 @@ fun SettingsScreen(
                             )
                         },
                         singleLine = true,
+                        isError = isUnresponsive,
                         visualTransformation = if (isVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -381,7 +473,7 @@ fun SettingsScreen(
                                     Icon(
                                         Icons.Default.ContentPaste,
                                         contentDescription = "Coller",
-                                        tint = CyberCyan,
+                                        tint = if (isUnresponsive) DangerRed else CyberCyan,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -414,21 +506,34 @@ fun SettingsScreen(
                         textStyle = androidx.compose.ui.text.TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
-                            color = TextPrimary
+                            color = if (isUnresponsive) DangerRed else TextPrimary
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("settings_api_key_input_$index"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = CyberCyan,
-                            unfocusedBorderColor = DarkSurfaceVariant
+                            focusedBorderColor = if (isUnresponsive) DangerRed else CyberCyan,
+                            unfocusedBorderColor = if (isUnresponsive) DangerRed else DarkSurfaceVariant,
+                            errorBorderColor = DangerRed,
+                            errorTextColor = DangerRed
                         )
                     )
+
+                    if (isUnresponsive) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "⚠️ ${health?.message ?: "Cette clé API ne répond pas"}",
+                            color = DangerRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.testTag("settings_api_key_error_$index")
+                        )
+                    }
                 }
             }
         }
 
-        // Boutons Ajouter une clé & Sauvegarder manuellement
+        // Boutons Ajouter une clé, Tester les clés & Sauvegarder manuellement
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
@@ -448,6 +553,46 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
+                }
+
+                if (savedActiveCount > 0) {
+                    OutlinedButton(
+                        onClick = onVerifyApiKeys,
+                        enabled = !isCheckingApiKeys,
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (unresponsiveCount > 0) DangerRed else NeonEmerald.copy(alpha = 0.65f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("settings_verify_api_keys_button")
+                    ) {
+                        if (isCheckingApiKeys) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = CyberCyan,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Vérification des clés API...", color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        } else {
+                            Icon(
+                                imageVector = if (unresponsiveCount > 0) Icons.Default.Warning else Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = if (unresponsiveCount > 0) DangerRed else NeonEmerald,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Tester la réponse des clés API",
+                                color = if (unresponsiveCount > 0) DangerRed else NeonEmerald,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
                 }
 
                 Button(
