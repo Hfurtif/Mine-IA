@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Miner IA</string>
+    <string name="relay_notification_channel_name">Relais Stratum Bitcoin</string>
+    <string name="relay_notification_channel_desc">État du relais Stratum v1 et compteur de parts acceptées</string>
+    <string name="relay_action_stop">Arrêter</string>
+    <string name="honest_disclaimer">L\'application doit rester active (service en avant-plan) pour relayer les calculs. Les gains dépendent du pool et du coût du service de calcul ; aucun rendement n\'est garanti.</string>
 </resources>

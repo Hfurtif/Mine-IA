@@ -1,6 +1,6 @@
 {
   "name": "Miner IA",
-  "description": "Application de minage automatique de cryptomonnaies par calcul IA déporté",
+  "description": "Relais Bitcoin Stratum v1 entre pool et service de calcul distant avec vérification locale SHA-256 et données réelles",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
