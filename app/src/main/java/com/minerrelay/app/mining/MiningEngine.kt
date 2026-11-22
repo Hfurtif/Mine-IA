@@ -44,6 +44,8 @@ data class MiningTelemetry(
     val status: MiningStatus = MiningStatus.IDLE,
     val poolConnectionState: PoolConnectionState = PoolConnectionState.DISCONNECTED,
     val poolDetail: String = "Non connecté",
+    val activePoolEndpoint: String = "",
+    val isUsingBackupPool: Boolean = false,
     val isTestMode: Boolean = false,
     val currentJobId: String? = null,
     val currentDifficulty: Double = 0.0,
@@ -94,6 +96,9 @@ class MiningEngine(
     private var activeComputeApiKey: String = ""
 
     @Volatile
+    private var activePoolPassword: String = ""
+
+    @Volatile
     private var currentJob: StratumJob? = null
 
     @Volatile
@@ -109,9 +114,10 @@ class MiningEngine(
     private var hashrateTickerJob: Job? = null
     private var sessionStartMs: Long = 0L
 
-    fun startRelay(config: RelayConfig, computeApiKey: String) {
+    fun startRelay(config: RelayConfig, computeApiKey: String, poolPassword: String = "") {
         activeConfig = config
         activeComputeApiKey = computeApiKey.trim()
+        activePoolPassword = poolPassword.trim()
         userWantsRelayActive = true
         sessionStartMs = System.currentTimeMillis()
         currentJob = null
@@ -124,9 +130,9 @@ class MiningEngine(
             return
         }
 
-        if (SecurityValidator.validateBitcoinMainnetAddress(config.btcAddress) !is AddressValidationResult.Valid) {
-            appendActivityLog(LogLevel.ERROR, "Adresse Bitcoin publique invalide.")
-            _telemetry.update { it.copy(status = MiningStatus.ERROR, poolDetail = "Adresse BTC invalide") }
+        if (config.poolLogin.isBlank()) {
+            appendActivityLog(LogLevel.ERROR, "Identifiant du pool manquant. Configurez-le dans Réglages.")
+            _telemetry.update { it.copy(status = MiningStatus.ERROR, poolDetail = "Identifiant du pool manquant") }
             userWantsRelayActive = false
             return
         }
@@ -146,7 +152,9 @@ class MiningEngine(
         }
 
         launchStratumAndBatchLoops()
-        refreshBlockchainTransactions(config.btcAddress)
+        if (config.btcAddress.isNotBlank()) {
+            refreshBlockchainTransactions(config.btcAddress)
+        }
     }
 
     fun stopRelay() {
@@ -255,6 +263,19 @@ class MiningEngine(
         }
     }
 
+    override fun onActiveEndpointChanged(endpointLabel: String, isBackup: Boolean) {
+        val previousBackup = _telemetry.value.isUsingBackupPool
+        _telemetry.update {
+            it.copy(
+                activePoolEndpoint = endpointLabel,
+                isUsingBackupPool = isBackup
+            )
+        }
+        if (isBackup && !previousBackup && endpointLabel.isNotBlank()) {
+            appendActivityLog(LogLevel.WARN, "Bascule automatique vers le pool de secours : $endpointLabel")
+        }
+    }
+
     override fun onDifficultyChanged(difficulty: Double) {
         _telemetry.update { it.copy(currentDifficulty = difficulty) }
         appendActivityLog(LogLevel.INFO, "Difficulté pool mise à jour : $difficulty")
@@ -276,7 +297,7 @@ class MiningEngine(
     override fun onDebugLog(direction: String, maskedPayload: String) {
         val redacted = EncryptedKeyStore.redactSensitive(
             message = maskedPayload,
-            secrets = listOf(activeComputeApiKey),
+            secrets = listOf(activeComputeApiKey, activePoolPassword),
             addresses = listOf(activeConfig.btcAddress)
         )
         _telemetry.update { state ->
@@ -288,7 +309,7 @@ class MiningEngine(
     override fun onRawTestResponse(rawLine: String) {
         val redacted = EncryptedKeyStore.redactSensitive(
             message = rawLine,
-            secrets = listOf(activeComputeApiKey),
+            secrets = listOf(activeComputeApiKey, activePoolPassword),
             addresses = listOf(activeConfig.btcAddress)
         )
         _telemetry.update { state ->
@@ -326,8 +347,10 @@ class MiningEngine(
         stratumClient.start(
             rawHost = config.poolHost,
             port = port,
-            btcAddress = config.btcAddress,
-            workerName = config.workerName,
+            poolLogin = config.poolLogin,
+            poolPassword = activePoolPassword,
+            backupPort = if (config.backupPoolEnabled) config.backupPoolPort else null,
+            backupUseTls = config.backupPoolUseTls,
             testModeLowDifficulty = config.testMode
         )
 
@@ -544,7 +567,7 @@ class MiningEngine(
     private fun appendActivityLog(level: LogLevel, rawMessage: String) {
         val safe = EncryptedKeyStore.redactSensitive(
             message = rawMessage,
-            secrets = listOf(activeComputeApiKey),
+            secrets = listOf(activeComputeApiKey, activePoolPassword),
             addresses = listOf(activeConfig.btcAddress)
         )
         _telemetry.update { state ->

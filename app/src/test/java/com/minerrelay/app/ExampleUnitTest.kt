@@ -81,9 +81,7 @@ class ExampleUnitTest {
             nonce = 42L
         )
         assertEquals(80, header.size)
-        // version little-endian of 0x20000000 -> 00 00 00 20
         assertEquals("00000020", BitcoinCrypto.bytesToHex(header.copyOfRange(0, 4)))
-        // nonce little-endian of 42 (0x2a) -> 2a 00 00 00
         assertEquals("2a000000", BitcoinCrypto.bytesToHex(header.copyOfRange(76, 80)))
     }
 
@@ -107,7 +105,6 @@ class ExampleUnitTest {
 
         val oneShare = listOf(AcceptedShareRecord(timestampMs = now - 10_000L, difficulty = 1.0))
         val hps = MiningEngine.calculateHashrateHps(oneShare, MiningEngine.WINDOW_15M_MS, now, now - 100_000L)
-        // diff=1 (2^32 hashes) over 100 seconds = 42,949,672.96 H/s
         assertEquals(42_949_672.96, hps, 1.0)
     }
 }

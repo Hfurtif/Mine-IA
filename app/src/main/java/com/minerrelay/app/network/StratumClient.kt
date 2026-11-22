@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 data class StratumJob(
@@ -37,6 +38,27 @@ data class StratumJob(
     val extranonce2Size: Int,
     val difficulty: Double
 )
+
+data class StratumEndpoint(
+    val rawHost: String,
+    val port: Int,
+    val isBackup: Boolean = false,
+    val forceTls: Boolean = false
+) {
+    val cleanHost: String
+        get() = StratumClient.cleanStratumHost(rawHost)
+
+    val useTls: Boolean
+        get() = forceTls ||
+            rawHost.trim().startsWith("stratum+ssl://", ignoreCase = true) ||
+            rawHost.trim().startsWith("ssl://", ignoreCase = true)
+
+    fun displayLabel(): String {
+        val role = if (isBackup) "Secours" else "Principal"
+        val proto = if (useTls) "SSL" else "TCP"
+        return "$cleanHost:$port ($role • $proto)"
+    }
+}
 
 sealed class ShareSubmissionResult {
     object Accepted : ShareSubmissionResult()
@@ -55,6 +77,7 @@ enum class PoolConnectionState(val labelFr: String) {
 
 interface StratumEventListener {
     fun onConnectionStateChanged(state: PoolConnectionState, detail: String)
+    fun onActiveEndpointChanged(endpointLabel: String, isBackup: Boolean) {}
     fun onJobReceived(job: StratumJob)
     fun onDifficultyChanged(difficulty: Double)
     fun onDebugLog(direction: String, maskedPayload: String)
@@ -63,8 +86,9 @@ interface StratumEventListener {
 
 /**
  * Client Stratum v1 sur socket TCP pur (`java.net.Socket`, sans OkHttp).
- * Supporte `mining.subscribe`, `mining.authorize`, `mining.suggest_difficulty` (mode test),
- * `mining.notify`, `mining.set_difficulty`, `mining.submit` et la reconnexion exponentielle.
+ * - Utilise l'identifiant du pool TEL QUEL dans `mining.authorize` et `mining.submit` (sans adresse BTC).
+ * - Mot de passe facultatif (« x » par défaut si laissé vide).
+ * - Supporte un pool de secours (même hôte, ex: port 443) avec bascule automatique en cas d'échec.
  */
 class StratumClient(
     private val scope: CoroutineScope,
@@ -96,42 +120,87 @@ class StratumClient(
     private var authorizedUser: String = ""
 
     @Volatile
-    private var activeAddressToMask: String = ""
+    private var activePasswordToMask: String = ""
 
     fun start(
         rawHost: String,
         port: Int,
-        btcAddress: String,
-        workerName: String,
-        testModeLowDifficulty: Boolean
+        poolLogin: String,
+        poolPassword: String = "",
+        backupPort: Int? = null,
+        backupUseTls: Boolean = false,
+        testModeLowDifficulty: Boolean = false
     ) {
         stop()
         shouldRun = true
-        activeAddressToMask = btcAddress.trim()
-        val cleanWorker = workerName.trim().ifEmpty { "worker1" }
-        authorizedUser = "${btcAddress.trim()}.$cleanWorker"
+        authorizedUser = poolLogin.trim()
+        val effectivePassword = resolveAuthorizePassword(poolPassword)
+        activePasswordToMask = if (poolPassword.trim().isNotEmpty()) effectivePassword else ""
+
+        val endpoints = buildEndpointList(
+            rawHost = rawHost,
+            primaryPort = port,
+            backupPort = backupPort,
+            backupUseTls = backupUseTls
+        )
 
         sessionJob = scope.launch(Dispatchers.IO) {
             var backoffMs = 2_000L
+            var endpointIndex = 0
+
             while (isActive && shouldRun) {
+                val endpoint = endpoints[endpointIndex]
+                val endpointLabel = endpoint.displayLabel()
+                listener.onActiveEndpointChanged(endpointLabel, endpoint.isBackup)
+
+                var connectionEstablished = false
                 try {
                     connectAndRunLoop(
-                        rawHost = rawHost,
-                        port = port,
+                        endpoint = endpoint,
                         workerLogin = authorizedUser,
-                        testModeLowDifficulty = testModeLowDifficulty
+                        workerPassword = effectivePassword,
+                        testModeLowDifficulty = testModeLowDifficulty,
+                        onSessionConnected = {
+                            connectionEstablished = true
+                            backoffMs = 2_000L
+                        }
                     )
-                    backoffMs = 2_000L
                 } catch (e: Exception) {
                     if (!shouldRun) break
                     val errMsg = e.message ?: e.javaClass.simpleName
-                    listener.onDebugLog("ERR", "Stratum déconnecté : $errMsg")
-                    listener.onConnectionStateChanged(
-                        PoolConnectionState.RECONNECTING,
-                        "Reconnexion dans ${backoffMs / 1000}s ($errMsg)"
-                    )
-                    delay(backoffMs)
-                    backoffMs = (backoffMs * 2).coerceAtMost(60_000L)
+                    listener.onDebugLog("ERR", "Stratum déconnecté ($endpointLabel) : $errMsg")
+
+                    if (endpoints.size > 1) {
+                        val nextIndex = (endpointIndex + 1) % endpoints.size
+                        val nextEndpoint = endpoints[nextIndex]
+                        val switchingToBackup = !endpoint.isBackup && nextEndpoint.isBackup
+                        val waitMs = if (switchingToBackup && !connectionEstablished) {
+                            1_000L
+                        } else {
+                            backoffMs
+                        }
+
+                        listener.onDebugLog(
+                            "FAILOVER",
+                            "Bascule automatique vers ${nextEndpoint.displayLabel()} dans ${waitMs / 1000.0}s"
+                        )
+                        listener.onConnectionStateChanged(
+                            PoolConnectionState.RECONNECTING,
+                            "Bascule vers ${nextEndpoint.displayLabel()} ($errMsg)"
+                        )
+                        delay(waitMs)
+                        if (!switchingToBackup || connectionEstablished) {
+                            backoffMs = (backoffMs * 2).coerceAtMost(60_000L)
+                        }
+                        endpointIndex = nextIndex
+                    } else {
+                        listener.onConnectionStateChanged(
+                            PoolConnectionState.RECONNECTING,
+                            "Reconnexion dans ${backoffMs / 1000}s ($errMsg)"
+                        )
+                        delay(backoffMs)
+                        backoffMs = (backoffMs * 2).coerceAtMost(60_000L)
+                    }
                 } finally {
                     closeSocketQuietly()
                 }
@@ -147,6 +216,7 @@ class StratumClient(
         closeSocketQuietly()
         pendingResponses.values.forEach { it.cancel() }
         pendingResponses.clear()
+        listener.onActiveEndpointChanged("", false)
         listener.onConnectionStateChanged(PoolConnectionState.DISCONNECTED, "Déconnecté")
     }
 
@@ -156,13 +226,13 @@ class StratumClient(
         ntimeHex: String,
         nonceHex: String
     ): ShareSubmissionResult = withContext(Dispatchers.IO) {
-        val params = JSONArray().apply {
-            put(authorizedUser)
-            put(jobId)
-            put(extranonce2Hex)
-            put(ntimeHex)
-            put(nonceHex)
-        }
+        val params = buildSubmitParams(
+            poolLogin = authorizedUser,
+            jobId = jobId,
+            extranonce2Hex = extranonce2Hex,
+            ntimeHex = ntimeHex,
+            nonceHex = nonceHex
+        )
         val response = sendRequest("mining.submit", params, timeoutMs = 15_000L)
             ?: return@withContext ShareSubmissionResult.Rejected("Timeout pool lors de mining.submit")
 
@@ -185,33 +255,35 @@ class StratumClient(
     }
 
     private suspend fun connectAndRunLoop(
-        rawHost: String,
-        port: Int,
+        endpoint: StratumEndpoint,
         workerLogin: String,
-        testModeLowDifficulty: Boolean
+        workerPassword: String,
+        testModeLowDifficulty: Boolean,
+        onSessionConnected: () -> Unit
     ) = withContext(Dispatchers.IO) {
-        val trimmedHost = rawHost.trim()
-        val useTls = trimmedHost.startsWith("stratum+ssl://", ignoreCase = true) ||
-            trimmedHost.startsWith("ssl://", ignoreCase = true)
-        val cleanHost = trimmedHost
-            .removePrefix("stratum+tcp://")
-            .removePrefix("stratum+ssl://")
-            .removePrefix("tcp://")
-            .removePrefix("ssl://")
-            .substringBefore("/")
-            .substringBefore(":")
+        val cleanHost = endpoint.cleanHost
+        val port = endpoint.port
 
-        listener.onConnectionStateChanged(PoolConnectionState.CONNECTING, "$cleanHost:$port")
+        listener.onConnectionStateChanged(
+            PoolConnectionState.CONNECTING,
+            endpoint.displayLabel()
+        )
 
-        val createdSocket = if (useTls) {
-            SSLSocketFactory.getDefault().createSocket(cleanHost, port)
-        } else {
-            Socket().apply {
-                connect(InetSocketAddress(cleanHost, port), 15_000)
-            }
+        val rawTcpSocket = Socket().apply {
+            connect(InetSocketAddress(cleanHost, port), 15_000)
+            soTimeout = 120_000
+            keepAlive = true
         }
-        createdSocket.soTimeout = 120_000
-        createdSocket.keepAlive = true
+        val createdSocket: Socket = if (endpoint.useTls) {
+            val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val sslSocket = sslFactory
+                .createSocket(rawTcpSocket, cleanHost, port, true) as SSLSocket
+            sslSocket.soTimeout = 120_000
+            sslSocket.startHandshake()
+            sslSocket
+        } else {
+            rawTcpSocket
+        }
         socket = createdSocket
 
         val reader = BufferedReader(InputStreamReader(createdSocket.getInputStream(), Charsets.UTF_8))
@@ -241,7 +313,7 @@ class StratumClient(
                     handleIncomingLine(line)
                 }
             } catch (_: Exception) {
-                // Sortie de lecture déclenche la reconnexion
+                // Sortie de lecture déclenche la reconnexion / bascule
             } finally {
                 pendingResponses.values.forEach { it.cancel() }
                 pendingResponses.clear()
@@ -250,7 +322,10 @@ class StratumClient(
 
         try {
             // 1. mining.subscribe
-            listener.onConnectionStateChanged(PoolConnectionState.SUBSCRIBING, "mining.subscribe")
+            listener.onConnectionStateChanged(
+                PoolConnectionState.SUBSCRIBING,
+                "${endpoint.displayLabel()} • mining.subscribe"
+            )
             val subResp = sendRequest("mining.subscribe", JSONArray().put("MinerRelay/1.0"), 12_000L)
                 ?: throw IllegalStateException("Aucune réponse à mining.subscribe")
 
@@ -267,24 +342,22 @@ class StratumClient(
                 sendRequest("mining.suggest_difficulty", JSONArray().put(0.01), 5_000L)
             }
 
-            // 3. mining.authorize
+            // 3. mining.authorize (identifiant du pool TEL QUEL, sans adresse BTC)
             listener.onConnectionStateChanged(
                 PoolConnectionState.AUTHORIZING,
-                EncryptedKeyStore.maskAddress(activeAddressToMask)
+                workerLogin
             )
-            val authParams = JSONArray().apply {
-                put(workerLogin)
-                put("x")
-            }
+            val authParams = buildAuthorizeParams(workerLogin, workerPassword)
             val authResp = sendRequest("mining.authorize", authParams, 12_000L)
                 ?: throw IllegalStateException("Aucune réponse à mining.authorize")
             if (!authResp.optBoolean("result", false)) {
-                throw IllegalStateException("Worker refusé par le pool : ${authResp.opt("error")}")
+                throw IllegalStateException("Identifiant refusé par le pool : ${authResp.opt("error")}")
             }
 
+            onSessionConnected()
             listener.onConnectionStateChanged(
                 PoolConnectionState.CONNECTED,
-                "$cleanHost:$port (extranonce2=${extranonce2Size}o)"
+                "${endpoint.displayLabel()} (extranonce2=${extranonce2Size}o)"
             )
 
             readerJob.join()
@@ -378,8 +451,10 @@ class StratumClient(
         }
     }
 
-    private fun maskLine(raw: String): String =
-        EncryptedKeyStore.redactSensitive(raw, emptyList(), listOf(activeAddressToMask))
+    private fun maskLine(raw: String): String {
+        val secrets = if (activePasswordToMask.isNotEmpty()) listOf(activePasswordToMask) else emptyList()
+        return EncryptedKeyStore.redactSensitive(raw, secrets, emptyList())
+    }
 
     private fun closeSocketQuietly() {
         try {
@@ -387,6 +462,65 @@ class StratumClient(
         } catch (_: Exception) {
         } finally {
             socket = null
+        }
+    }
+
+    companion object {
+        fun cleanStratumHost(rawHost: String): String {
+            return rawHost.trim()
+                .removePrefix("stratum+tcp://")
+                .removePrefix("stratum+ssl://")
+                .removePrefix("tcp://")
+                .removePrefix("ssl://")
+                .substringBefore("/")
+                .substringBefore(":")
+        }
+
+        fun resolveAuthorizePassword(rawPassword: String): String {
+            val trimmed = rawPassword.trim()
+            return trimmed.ifEmpty { "x" }
+        }
+
+        fun buildAuthorizeParams(poolLogin: String, poolPassword: String): JSONArray {
+            return JSONArray().apply {
+                put(poolLogin.trim())
+                put(resolveAuthorizePassword(poolPassword))
+            }
+        }
+
+        fun buildSubmitParams(
+            poolLogin: String,
+            jobId: String,
+            extranonce2Hex: String,
+            ntimeHex: String,
+            nonceHex: String
+        ): JSONArray {
+            return JSONArray().apply {
+                put(poolLogin.trim())
+                put(jobId)
+                put(extranonce2Hex)
+                put(ntimeHex)
+                put(nonceHex)
+            }
+        }
+
+        fun buildEndpointList(
+            rawHost: String,
+            primaryPort: Int,
+            backupPort: Int?,
+            backupUseTls: Boolean
+        ): List<StratumEndpoint> {
+            val primary = StratumEndpoint(rawHost = rawHost, port = primaryPort, isBackup = false, forceTls = false)
+            if (backupPort != null && backupPort in 1..65535 && backupPort != primaryPort) {
+                val backup = StratumEndpoint(
+                    rawHost = rawHost,
+                    port = backupPort,
+                    isBackup = true,
+                    forceTls = backupUseTls
+                )
+                return listOf(primary, backup)
+            }
+            return listOf(primary)
         }
     }
 }

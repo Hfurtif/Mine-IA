@@ -81,6 +81,7 @@ fun MainScreen(
     val telemetry by viewModel.telemetry.collectAsStateWithLifecycle()
     val wallets by viewModel.wallets.collectAsStateWithLifecycle()
     val relayConfig by viewModel.relayConfig.collectAsStateWithLifecycle()
+    val poolPassword by viewModel.poolPasswordInput.collectAsStateWithLifecycle()
     val computeApiKey by viewModel.computeApiKeyInput.collectAsStateWithLifecycle()
     val geminiApiKey by viewModel.geminiApiKeyInput.collectAsStateWithLifecycle()
     val computeKeyHealth by viewModel.computeKeyHealth.collectAsStateWithLifecycle()
@@ -234,6 +235,7 @@ fun MainScreen(
 
                     NavTab.SETTINGS -> SettingsScreen(
                         relayConfig = relayConfig,
+                        poolPassword = poolPassword,
                         computeApiKey = computeApiKey,
                         geminiApiKey = geminiApiKey,
                         computeKeyHealth = computeKeyHealth,

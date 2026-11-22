@@ -7,7 +7,7 @@ import com.minerrelay.app.security.EncryptedKeyStore
 
 /**
  * Stocke la configuration utilisateur non secrète (aucun défaut ressemblant à un vrai pool)
- * et délègue les clés API chiffrées à AndroidKeyStore via EncryptedKeyStore.
+ * et délègue les clés API et le mot de passe pool optionnel à EncryptedKeyStore.
  */
 class AppPreferences(context: Context) {
 
@@ -24,9 +24,21 @@ class AppPreferences(context: Context) {
         get() = prefs.getString(KEY_POOL_PORT, "") ?: ""
         set(value) = prefs.edit().putString(KEY_POOL_PORT, value.trim()).apply()
 
-    var workerName: String
-        get() = prefs.getString(KEY_WORKER_NAME, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_WORKER_NAME, value.trim()).apply()
+    var poolLogin: String
+        get() = prefs.getString(KEY_POOL_LOGIN, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_POOL_LOGIN, value.trim()).apply()
+
+    var backupPoolEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BACKUP_POOL_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_BACKUP_POOL_ENABLED, value).apply()
+
+    var backupPoolPortText: String
+        get() = prefs.getString(KEY_BACKUP_POOL_PORT, DEFAULT_BACKUP_PORT) ?: DEFAULT_BACKUP_PORT
+        set(value) = prefs.edit().putString(KEY_BACKUP_POOL_PORT, value.trim()).apply()
+
+    var backupPoolUseTls: Boolean
+        get() = prefs.getBoolean(KEY_BACKUP_POOL_USE_TLS, false)
+        set(value) = prefs.edit().putBoolean(KEY_BACKUP_POOL_USE_TLS, value).apply()
 
     var btcAddress: String
         get() = prefs.getString(KEY_BTC_ADDRESS, "") ?: ""
@@ -48,6 +60,9 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_TEST_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_TEST_MODE, value).apply()
 
+    fun savePoolPassword(password: String) = encryptedKeyStore.savePoolPassword(password)
+    fun getPoolPassword(): String = encryptedKeyStore.getPoolPassword()
+
     fun saveComputeApiKey(key: String) = encryptedKeyStore.saveComputeApiKey(key)
     fun getComputeApiKey(): String = encryptedKeyStore.getComputeApiKey()
 
@@ -57,7 +72,10 @@ class AppPreferences(context: Context) {
     fun loadRelayConfig(): RelayConfig = RelayConfig(
         poolHost = poolHost,
         poolPort = poolPortText.toIntOrNull(),
-        workerName = workerName,
+        poolLogin = poolLogin,
+        backupPoolEnabled = backupPoolEnabled,
+        backupPoolPort = backupPoolPortText.toIntOrNull() ?: 443,
+        backupPoolUseTls = backupPoolUseTls,
         btcAddress = btcAddress,
         computeApiUrl = computeApiUrl,
         wifiOnly = wifiOnly,
@@ -68,7 +86,11 @@ class AppPreferences(context: Context) {
     fun saveRelaySettings(
         poolHost: String,
         poolPortText: String,
-        workerName: String,
+        poolLogin: String,
+        poolPassword: String,
+        backupPoolEnabled: Boolean,
+        backupPoolPortText: String,
+        backupPoolUseTls: Boolean,
         btcAddress: String,
         computeApiUrl: String,
         computeApiKey: String,
@@ -79,21 +101,29 @@ class AppPreferences(context: Context) {
     ) {
         this.poolHost = poolHost
         this.poolPortText = poolPortText
-        this.workerName = workerName
+        this.poolLogin = poolLogin
+        this.backupPoolEnabled = backupPoolEnabled
+        this.backupPoolPortText = backupPoolPortText.trim().ifEmpty { DEFAULT_BACKUP_PORT }
+        this.backupPoolUseTls = backupPoolUseTls
         this.btcAddress = btcAddress
         this.computeApiUrl = computeApiUrl
         this.wifiOnly = wifiOnly
         this.chargingOnly = chargingOnly
         this.testMode = testMode
+        savePoolPassword(poolPassword)
         saveComputeApiKey(computeApiKey)
         saveGeminiApiKey(geminiApiKey)
     }
 
     companion object {
         private const val PREFS_NAME = "minerrelay_preferences"
+        private const val DEFAULT_BACKUP_PORT = "443"
         private const val KEY_POOL_HOST = "pool_host"
         private const val KEY_POOL_PORT = "pool_port"
-        private const val KEY_WORKER_NAME = "worker_name"
+        private const val KEY_POOL_LOGIN = "pool_login"
+        private const val KEY_BACKUP_POOL_ENABLED = "backup_pool_enabled"
+        private const val KEY_BACKUP_POOL_PORT = "backup_pool_port"
+        private const val KEY_BACKUP_POOL_USE_TLS = "backup_pool_use_tls"
         private const val KEY_BTC_ADDRESS = "btc_address"
         private const val KEY_COMPUTE_API_URL = "compute_api_url"
         private const val KEY_WIFI_ONLY = "wifi_only"

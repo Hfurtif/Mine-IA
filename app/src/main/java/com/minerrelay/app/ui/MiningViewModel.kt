@@ -46,6 +46,9 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     private val _relayConfig = MutableStateFlow(preferences.loadRelayConfig())
     val relayConfig: StateFlow<RelayConfig> = _relayConfig.asStateFlow()
 
+    private val _poolPasswordInput = MutableStateFlow(preferences.getPoolPassword())
+    val poolPasswordInput: StateFlow<String> = _poolPasswordInput.asStateFlow()
+
     private val _computeApiKeyInput = MutableStateFlow(preferences.getComputeApiKey())
     val computeApiKeyInput: StateFlow<String> = _computeApiKeyInput.asStateFlow()
 
@@ -95,7 +98,11 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
     fun saveSettings(
         poolHost: String,
         poolPortText: String,
-        workerName: String,
+        poolLogin: String,
+        poolPassword: String,
+        backupPoolEnabled: Boolean,
+        backupPoolPortText: String,
+        backupPoolUseTls: Boolean,
         btcAddress: String,
         computeApiUrl: String,
         computeApiKey: String,
@@ -107,6 +114,9 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         val cleanHost = poolHost.trim()
         val cleanPortText = poolPortText.trim()
         val parsedPort = cleanPortText.toIntOrNull()
+        val cleanPoolLogin = poolLogin.trim()
+        val cleanBackupPortText = backupPoolPortText.trim().ifEmpty { "443" }
+        val parsedBackupPort = cleanBackupPortText.toIntOrNull()
         val cleanAddress = btcAddress.trim()
 
         if (cleanHost.isEmpty() || parsedPort == null || parsedPort !in 1..65535) {
@@ -114,26 +124,48 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
             return false
         }
 
-        when (val addrResult = SecurityValidator.validateBitcoinMainnetAddress(cleanAddress)) {
-            is AddressValidationResult.DangerousSeedPhraseDetected -> {
-                showNotification(addrResult.message, isError = true)
+        if (cleanPoolLogin.isEmpty()) {
+            showNotification("Veuillez saisir l'identifiant du pool (ex : Hfurtif.worker1).", isError = true)
+            return false
+        }
+
+        if (backupPoolEnabled) {
+            if (parsedBackupPort == null || parsedBackupPort !in 1..65535) {
+                showNotification("Veuillez saisir un port de secours valide (1..65535).", isError = true)
                 return false
             }
-            is AddressValidationResult.DangerousPrivateKeyDetected -> {
-                showNotification(addrResult.message, isError = true)
+            if (parsedBackupPort == parsedPort) {
+                showNotification("Le port du pool de secours doit être différent du port principal.", isError = true)
                 return false
             }
-            is AddressValidationResult.InvalidFormat -> {
-                showNotification(addrResult.reason, isError = true)
-                return false
+        }
+
+        if (cleanAddress.isNotEmpty()) {
+            when (val addrResult = SecurityValidator.validateBitcoinMainnetAddress(cleanAddress)) {
+                is AddressValidationResult.DangerousSeedPhraseDetected -> {
+                    showNotification(addrResult.message, isError = true)
+                    return false
+                }
+                is AddressValidationResult.DangerousPrivateKeyDetected -> {
+                    showNotification(addrResult.message, isError = true)
+                    return false
+                }
+                is AddressValidationResult.InvalidFormat -> {
+                    showNotification(addrResult.reason, isError = true)
+                    return false
+                }
+                AddressValidationResult.Valid -> Unit
             }
-            AddressValidationResult.Valid -> Unit
         }
 
         preferences.saveRelaySettings(
             poolHost = cleanHost,
             poolPortText = cleanPortText,
-            workerName = workerName.trim().ifEmpty { "worker1" },
+            poolLogin = cleanPoolLogin,
+            poolPassword = poolPassword.trim(),
+            backupPoolEnabled = backupPoolEnabled,
+            backupPoolPortText = cleanBackupPortText,
+            backupPoolUseTls = backupPoolUseTls,
             btcAddress = cleanAddress,
             computeApiUrl = computeApiUrl.trim(),
             computeApiKey = computeApiKey.trim(),
@@ -144,10 +176,11 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         )
 
         _relayConfig.value = preferences.loadRelayConfig()
+        _poolPasswordInput.value = preferences.getPoolPassword()
         _computeApiKeyInput.value = preferences.getComputeApiKey()
         _geminiApiKeyInput.value = preferences.getGeminiApiKey()
         engine.refreshBlockchainTransactions(cleanAddress)
-        showNotification("Configuration sauvegardée et clés chiffrées via AndroidKeyStore.")
+        showNotification("Configuration sauvegardée et secrets chiffrés via AndroidKeyStore.")
         return true
     }
 
@@ -163,11 +196,7 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         _relayConfig.value = cfg
 
         if (!cfg.isPoolConfigured) {
-            showNotification("Configurez d'abord l'hôte du pool, le port et votre adresse BTC dans Réglages.", isError = true)
-            return
-        }
-        if (SecurityValidator.validateBitcoinMainnetAddress(cfg.btcAddress) !is AddressValidationResult.Valid) {
-            showNotification("Adresse Bitcoin invalide. Vérifiez-la dans Réglages.", isError = true)
+            showNotification("Configurez d'abord l'hôte du pool, le port et votre identifiant du pool dans Réglages.", isError = true)
             return
         }
 
@@ -251,7 +280,7 @@ class MiningViewModel(application: Application) : AndroidViewModel(application) 
         preferences.btcAddress = wallet.publicAddress
         _relayConfig.value = preferences.loadRelayConfig()
         engine.refreshBlockchainTransactions(wallet.publicAddress)
-        showNotification("Adresse ${EncryptedKeyStore.maskAddress(wallet.publicAddress)} sélectionnée pour le relais.")
+        showNotification("Adresse ${EncryptedKeyStore.maskAddress(wallet.publicAddress)} sélectionnée pour le suivi mempool.space.")
     }
 
     fun deleteWallet(wallet: WalletEntity) {

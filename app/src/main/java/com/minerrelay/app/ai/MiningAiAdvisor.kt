@@ -79,6 +79,9 @@ class MiningAiAdvisor(
             appendLine("ÉTAT RÉEL DU RELAIS BITCOIN (STRATUM v1) :")
             appendLine("- Statut relais : ${telemetry.status.labelFr}")
             appendLine("- Connexion pool : ${telemetry.poolConnectionState.labelFr} (${telemetry.poolDetail})")
+            if (telemetry.activePoolEndpoint.isNotBlank()) {
+                appendLine("- Endpoint actif : ${telemetry.activePoolEndpoint}")
+            }
             appendLine("- Parts acceptées : ${telemetry.acceptedShares}")
             appendLine("- Parts rejetées : ${telemetry.rejectedShares}")
             appendLine("- Parts périmées (stale) : ${telemetry.staleShares}")

@@ -93,12 +93,13 @@ class MiningRelayService : Service() {
                 val prefs = RelayCoordinator.getPreferences(this)
                 val config = prefs.loadRelayConfig()
                 val computeKey = prefs.getComputeApiKey()
+                val poolPassword = prefs.getPoolPassword()
 
                 startForegroundWithNotification(buildNotification(engine.telemetry.value))
                 observeTelemetry(engine)
                 refreshInitialEnvironmentState()
                 engine.onEnvironmentChanged(lastWifiConnected, lastCharging)
-                engine.startRelay(config, computeKey)
+                engine.startRelay(config, computeKey, poolPassword)
             }
         }
         return START_STICKY

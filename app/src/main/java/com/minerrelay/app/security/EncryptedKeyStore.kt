@@ -15,9 +15,9 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Stockage chiffré AES/GCM via AndroidKeyStore pour les clés API sensibles.
- * - Ne journalise jamais aucune clé en clair.
- * - Sépare la clé du service de calcul de la clé optionnelle Gemini.
+ * Stockage chiffré AES/GCM via AndroidKeyStore pour les clés API et secrets utilisateur.
+ * - Ne journalise jamais aucune clé ni mot de passe en clair.
+ * - Sépare la clé du service de calcul, la clé optionnelle Gemini et le mot de passe pool optionnel.
  */
 class EncryptedKeyStore(context: Context) {
 
@@ -36,10 +36,17 @@ class EncryptedKeyStore(context: Context) {
 
     fun getGeminiApiKey(): String = readDecrypted(KEY_GEMINI_API)
 
+    fun savePoolPassword(password: String) {
+        saveEncrypted(KEY_POOL_PASSWORD, password.trim())
+    }
+
+    fun getPoolPassword(): String = readDecrypted(KEY_POOL_PASSWORD)
+
     fun clearAllKeys() {
         prefs.edit()
             .remove(KEY_COMPUTE_API)
             .remove(KEY_GEMINI_API)
+            .remove(KEY_POOL_PASSWORD)
             .apply()
     }
 
@@ -130,6 +137,7 @@ class EncryptedKeyStore(context: Context) {
         private const val PREFS_NAME = "minerrelay_encrypted_secrets"
         private const val KEY_COMPUTE_API = "enc_compute_api_key"
         private const val KEY_GEMINI_API = "enc_gemini_api_key"
+        private const val KEY_POOL_PASSWORD = "enc_pool_password"
         private const val KEY_TEST_FALLBACK = "jvm_test_only_aes_key"
 
         fun maskSecret(secret: String): String {

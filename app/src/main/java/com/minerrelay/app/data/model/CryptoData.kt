@@ -24,7 +24,10 @@ data class MiningLogMessage(
 data class RelayConfig(
     val poolHost: String = "",
     val poolPort: Int? = null,
-    val workerName: String = "",
+    val poolLogin: String = "",
+    val backupPoolEnabled: Boolean = false,
+    val backupPoolPort: Int? = 443,
+    val backupPoolUseTls: Boolean = false,
     val btcAddress: String = "",
     val computeApiUrl: String = "",
     val wifiOnly: Boolean = false,
@@ -32,5 +35,13 @@ data class RelayConfig(
     val testMode: Boolean = false
 ) {
     val isPoolConfigured: Boolean
-        get() = poolHost.isNotBlank() && (poolPort ?: 0) in 1..65535 && btcAddress.isNotBlank()
+        get() = poolHost.isNotBlank() &&
+            (poolPort ?: 0) in 1..65535 &&
+            poolLogin.isNotBlank()
+
+    val isBackupPoolConfigured: Boolean
+        get() = backupPoolEnabled &&
+            poolHost.isNotBlank() &&
+            (backupPoolPort ?: 0) in 1..65535 &&
+            backupPoolPort != poolPort
 }

@@ -144,18 +144,28 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            val backupSuffix = if (relayConfig.isBackupPoolConfigured) {
+                                " • Secours :${relayConfig.backupPoolPort}"
+                            } else {
+                                ""
+                            }
                             Text(
                                 text = if (relayConfig.isPoolConfigured) {
-                                    "Serveur : ${relayConfig.poolHost}:${relayConfig.poolPort} • Worker : ${relayConfig.workerName.ifBlank { "worker1" }}"
+                                    val endpointDesc = if (telemetry.activePoolEndpoint.isNotBlank()) {
+                                        telemetry.activePoolEndpoint
+                                    } else {
+                                        "${relayConfig.poolHost}:${relayConfig.poolPort}$backupSuffix"
+                                    }
+                                    "Serveur : $endpointDesc • Identifiant : ${relayConfig.poolLogin}"
                                 } else {
-                                    "Pool non configuré — renseignez hôte, port et adresse BTC dans Réglages."
+                                    "Pool non configuré — renseignez hôte, port et identifiant dans Réglages."
                                 },
-                                color = TextPrimary,
+                                color = if (telemetry.isUsingBackupPool) WarningAmber else TextPrimary,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = "Adresse BTC : ${EncryptedKeyStore.maskAddress(relayConfig.btcAddress)} • Clé calcul : ${if (hasComputeKey) "Chiffrée (Keystore)" else "Manquante"}",
+                                text = "BTC (mempool) : ${if (relayConfig.btcAddress.isBlank()) "Aucune" else EncryptedKeyStore.maskAddress(relayConfig.btcAddress)} • Clé calcul : ${if (hasComputeKey) "Chiffrée (Keystore)" else "Manquante"}",
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
